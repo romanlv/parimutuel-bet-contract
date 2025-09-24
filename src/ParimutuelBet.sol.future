@@ -1,0 +1,327 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
+contract ParimutuelBet is ReentrancyGuard {
+    struct Market {
+        address creator;
+        address token; // ERC20 token for this market
+        string question;
+        string description;
+        uint256 deadline;
+        uint256 resolveAfter;
+        uint16 creatorFeePercentage;
+        uint256 yesPool;
+        uint256 noPool;
+        uint256 resolvedAt;
+        bool resolved;
+        bool outcome;
+        bool cancelled;
+        bool creatorFeeClaimed;
+    }
+
+    mapping(uint256 => Market) public markets;
+    mapping(uint256 => mapping(address => uint256)) public yesBets;
+    mapping(uint256 => mapping(address => uint256)) public noBets;
+    mapping(uint256 => mapping(address => bool)) public hasClaimed;
+
+    // Optional: Track which tokens are allowed
+    mapping(address => bool) public allowedTokens;
+    bool public useTokenWhitelist;
+
+    uint256 public nextMarketId;
+    uint256 public constant MAX_CREATOR_FEE = 1000; // 10% max
+    address public owner;
+
+    event MarketCreated(
+        uint256 indexed marketId,
+        address indexed creator,
+        address indexed token,
+        string question,
+        uint256 deadline,
+        uint256 resolveAfter,
+        uint16 creatorFee
+    );
+
+    event BetPlaced(uint256 indexed marketId, address indexed bettor, bool isYes, uint256 amount);
+
+    event MarketResolved(uint256 indexed marketId, bool outcome, uint256 timestamp);
+
+    event WinningsClaimed(uint256 indexed marketId, address indexed bettor, uint256 payout);
+
+    event MarketCancelled(uint256 indexed marketId);
+    event TokenWhitelisted(address indexed token, bool allowed);
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner");
+        _;
+    }
+
+    constructor() {
+        owner = msg.sender;
+        useTokenWhitelist = false; // Default: allow any token
+    }
+
+    function createMarket(
+        address _token,
+        string memory _question,
+        string memory _description,
+        uint256 _deadline,
+        uint256 _resolveAfter,
+        uint16 _creatorFeePercentage
+    ) external returns (uint256) {
+        require(_deadline > block.timestamp, "Deadline must be in future");
+        require(_resolveAfter == 0 || _resolveAfter >= _deadline, "ResolveAfter must be after deadline");
+        require(_creatorFeePercentage <= MAX_CREATOR_FEE, "Fee too high");
+        require(_token != address(0), "Invalid token");
+
+        // Optional token whitelist check
+        if (useTokenWhitelist) {
+            require(allowedTokens[_token], "Token not whitelisted");
+        }
+
+        uint256 marketId = nextMarketId++;
+
+        markets[marketId] = Market({
+            creator: msg.sender,
+            token: _token,
+            question: _question,
+            description: _description,
+            deadline: _deadline,
+            resolveAfter: _resolveAfter,
+            creatorFeePercentage: _creatorFeePercentage,
+            yesPool: 0,
+            noPool: 0,
+            resolvedAt: 0,
+            resolved: false,
+            outcome: false,
+            cancelled: false,
+            creatorFeeClaimed: false
+        });
+
+        emit MarketCreated(marketId, msg.sender, _token, _question, _deadline, _resolveAfter, _creatorFeePercentage);
+
+        return marketId;
+    }
+
+    function placeBet(uint256 _marketId, bool _betYes, uint256 _amount) external nonReentrant {
+        Market storage market = markets[_marketId];
+        require(block.timestamp < market.deadline, "Betting closed");
+        require(!market.cancelled, "Market cancelled");
+        require(!market.resolved, "Market resolved");
+        require(_amount > 0, "Amount must be positive");
+
+        // Transfer the market's specific token from bettor
+        IERC20 token = IERC20(market.token);
+        require(token.transferFrom(msg.sender, address(this), _amount), "Transfer failed");
+
+        if (_betYes) {
+            yesBets[_marketId][msg.sender] += _amount;
+            market.yesPool += _amount;
+        } else {
+            noBets[_marketId][msg.sender] += _amount;
+            market.noPool += _amount;
+        }
+
+        emit BetPlaced(_marketId, msg.sender, _betYes, _amount);
+    }
+
+    function resolve(uint256 _marketId, bool _outcome) external {
+        Market storage market = markets[_marketId];
+        require(msg.sender == market.creator, "Only creator can resolve");
+        require(block.timestamp >= market.deadline, "Betting still open");
+        require(!market.resolved, "Already resolved");
+        require(!market.cancelled, "Market cancelled");
+
+        if (market.resolveAfter > 0) {
+            require(block.timestamp >= market.resolveAfter, "Too early to resolve");
+        }
+
+        market.resolved = true;
+        market.outcome = _outcome;
+        market.resolvedAt = block.timestamp;
+
+        emit MarketResolved(_marketId, _outcome, block.timestamp);
+    }
+
+    function claim(uint256 _marketId) external nonReentrant {
+        Market storage market = markets[_marketId];
+        require(market.resolved, "Not resolved");
+        require(!hasClaimed[_marketId][msg.sender], "Already claimed");
+
+        uint256 userYesBet = yesBets[_marketId][msg.sender];
+        uint256 userNoBet = noBets[_marketId][msg.sender];
+        uint256 payout = 0;
+
+        uint256 totalPool = market.yesPool + market.noPool;
+        uint256 creatorFee = 0;
+
+        IERC20 token = IERC20(market.token);
+
+        if (market.creatorFeePercentage > 0 && !market.creatorFeeClaimed) {
+            // Calculate creator fee from losing pool
+            uint256 losingPool = market.outcome ? market.noPool : market.yesPool;
+            creatorFee = (losingPool * market.creatorFeePercentage) / 10000;
+            totalPool -= creatorFee;
+
+            // Mark fee as claimed
+            market.creatorFeeClaimed = true;
+
+            // Transfer fee to creator
+            if (creatorFee > 0) {
+                token.transfer(market.creator, creatorFee);
+            }
+        } else if (market.creatorFeeClaimed) {
+            // If fee already claimed, reduce total pool
+            uint256 losingPool = market.outcome ? market.noPool : market.yesPool;
+            creatorFee = (losingPool * market.creatorFeePercentage) / 10000;
+            totalPool -= creatorFee;
+        }
+
+        if (market.outcome && userYesBet > 0) {
+            // YES won
+            payout = (userYesBet * totalPool) / market.yesPool;
+        } else if (!market.outcome && userNoBet > 0) {
+            // NO won
+            payout = (userNoBet * totalPool) / market.noPool;
+        }
+
+        hasClaimed[_marketId][msg.sender] = true;
+
+        if (payout > 0) {
+            token.transfer(msg.sender, payout);
+            emit WinningsClaimed(_marketId, msg.sender, payout);
+        }
+    }
+
+    function cancel(uint256 _marketId) external {
+        Market storage market = markets[_marketId];
+        require(msg.sender == market.creator, "Only creator can cancel");
+        require(!market.resolved, "Already resolved");
+        require(market.yesPool == 0 && market.noPool == 0, "Bets already placed");
+
+        market.cancelled = true;
+        emit MarketCancelled(_marketId);
+    }
+
+    // Optional: Refund mechanism if creator doesn't resolve
+    function refund(uint256 _marketId) external nonReentrant {
+        Market storage market = markets[_marketId];
+        require(!market.resolved, "Already resolved");
+        require(!market.cancelled, "Already cancelled");
+        require(block.timestamp > market.deadline + 7 days, "Wait 7 days after deadline");
+        require(!hasClaimed[_marketId][msg.sender], "Already claimed");
+
+        uint256 userYesBet = yesBets[_marketId][msg.sender];
+        uint256 userNoBet = noBets[_marketId][msg.sender];
+        uint256 refundAmount = userYesBet + userNoBet;
+
+        require(refundAmount > 0, "No bets to refund");
+
+        hasClaimed[_marketId][msg.sender] = true;
+
+        IERC20 token = IERC20(market.token);
+        token.transfer(msg.sender, refundAmount);
+    }
+
+    // Admin functions
+    function setTokenWhitelist(bool _useWhitelist) external onlyOwner {
+        useTokenWhitelist = _useWhitelist;
+    }
+
+    function updateAllowedToken(address _token, bool _allowed) external onlyOwner {
+        allowedTokens[_token] = _allowed;
+        emit TokenWhitelisted(_token, _allowed);
+    }
+
+    // View functions
+    function getMarketDetails(uint256 _marketId)
+        external
+        view
+        returns (
+            Market memory market,
+            uint256 totalPool,
+            uint256 yesPercentage,
+            uint256 noPercentage,
+            string memory tokenSymbol,
+            uint8 tokenDecimals
+        )
+    {
+        market = markets[_marketId];
+        totalPool = market.yesPool + market.noPool;
+
+        if (totalPool > 0) {
+            yesPercentage = (market.yesPool * 100) / totalPool;
+            noPercentage = (market.noPool * 100) / totalPool;
+        }
+
+        // Try to get token info (might fail for some tokens)
+        try IERC20Metadata(market.token).symbol() returns (string memory symbol) {
+            tokenSymbol = symbol;
+        } catch {
+            tokenSymbol = "???";
+        }
+
+        try IERC20Metadata(market.token).decimals() returns (uint8 decimals) {
+            tokenDecimals = decimals;
+        } catch {
+            tokenDecimals = 18; // Default assumption
+        }
+
+        return (market, totalPool, yesPercentage, noPercentage, tokenSymbol, tokenDecimals);
+    }
+
+    function getUserPosition(uint256 _marketId, address _user)
+        external
+        view
+        returns (uint256 yesAmount, uint256 noAmount, uint256 potentialPayout, bool claimed)
+    {
+        Market memory market = markets[_marketId];
+        yesAmount = yesBets[_marketId][_user];
+        noAmount = noBets[_marketId][_user];
+        claimed = hasClaimed[_marketId][_user];
+
+        uint256 totalPool = market.yesPool + market.noPool;
+
+        // Calculate potential payout after fees
+        if (market.creatorFeePercentage > 0) {
+            uint256 losingPool = yesAmount > 0 ? market.noPool : market.yesPool;
+            uint256 creatorFee = (losingPool * market.creatorFeePercentage) / 10000;
+            totalPool -= creatorFee;
+        }
+
+        if (yesAmount > 0 && market.yesPool > 0) {
+            potentialPayout = (yesAmount * totalPool) / market.yesPool;
+        } else if (noAmount > 0 && market.noPool > 0) {
+            potentialPayout = (noAmount * totalPool) / market.noPool;
+        }
+
+        return (yesAmount, noAmount, potentialPayout, claimed);
+    }
+
+    function getActiveMarkets(uint256 _offset, uint256 _limit) external view returns (uint256[] memory) {
+        uint256[] memory activeIds = new uint256[](_limit);
+        uint256 count = 0;
+
+        for (uint256 i = _offset; i < nextMarketId && count < _limit; i++) {
+            if (!markets[i].resolved && !markets[i].cancelled && block.timestamp < markets[i].deadline) {
+                activeIds[count++] = i;
+            }
+        }
+
+        // Resize array to actual count
+        assembly {
+            mstore(activeIds, count)
+        }
+
+        return activeIds;
+    }
+}
+
+// Interface for tokens with metadata
+interface IERC20Metadata is IERC20 {
+    function symbol() external view returns (string memory);
+    function decimals() external view returns (uint8);
+}
