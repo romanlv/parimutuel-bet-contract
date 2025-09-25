@@ -64,3 +64,22 @@ $ forge --help
 $ anvil --help
 $ cast --help
 ```
+
+
+# deploy 
+
+
+```
+forge create ./src/ParimutuelBetV0.sol:ParimutuelBetV0 --rpc-url $BASE_SEPOLIA_RPC_URL --account deployer
+
+
+# verify 
+
+forge verify-contract $BET_CONTRACT_V0s
+
+cast call $BET_CONTRACT_V0 "getMarket(uint256)" --rpc-url $BASE_SEPOLIA_RPC_URL
+
+
+forge verify-contract --etherscan-api-key $ETHERSCAN_API_KEY  --rpc-url $BASE_SEPOLIA_RPC_URL  $BET_CONTRACT_V0 ./src/ParimutuelBetV0.sol:ParimutuelBetV0
+
+```

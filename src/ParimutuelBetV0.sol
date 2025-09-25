@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract ParimutuelBetV0 is ReentrancyGuard {
     struct Market {
@@ -122,15 +122,19 @@ contract ParimutuelBetV0 is ReentrancyGuard {
     }
 
     // View functions for market data access
-    function getMarket(uint256 marketId) external view returns (
-        address creator,
-        string memory question,
-        uint256 deadline,
-        uint256 yesPool,
-        uint256 noPool,
-        bool resolved,
-        bool outcome
-    ) {
+    function getMarket(uint256 marketId)
+        external
+        view
+        returns (
+            address creator,
+            string memory question,
+            uint256 deadline,
+            uint256 yesPool,
+            uint256 noPool,
+            bool resolved,
+            bool outcome
+        )
+    {
         Market memory market = markets[marketId];
         return (
             market.creator,
@@ -147,7 +151,11 @@ contract ParimutuelBetV0 is ReentrancyGuard {
         return (yesBets[marketId][user], noBets[marketId][user]);
     }
 
-    function getMarketPools(uint256 marketId) external view returns (uint256 yesPool, uint256 noPool, uint256 totalPool) {
+    function getMarketPools(uint256 marketId)
+        external
+        view
+        returns (uint256 yesPool, uint256 noPool, uint256 totalPool)
+    {
         Market memory market = markets[marketId];
         return (market.yesPool, market.noPool, market.yesPool + market.noPool);
     }
@@ -177,8 +185,7 @@ contract ParimutuelBetV0 is ReentrancyGuard {
     }
 
     function canRefund(uint256 marketId) external view returns (bool) {
-        return markets[marketId].creator != address(0) &&
-               !markets[marketId].resolved &&
-               block.timestamp > markets[marketId].deadline + REFUND_PERIOD;
+        return markets[marketId].creator != address(0) && !markets[marketId].resolved
+            && block.timestamp > markets[marketId].deadline + REFUND_PERIOD;
     }
 }
