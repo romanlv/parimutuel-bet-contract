@@ -31,15 +31,15 @@ contract ParimutuelBetV0Test is Test {
 
         // Alice takes position 2 ETH on YES
         vm.prank(alice);
-        parimutuel.takePosition{value: 2 ether}(betId, true);
+        parimutuel.takePosition{value: 2 ether}(betId, true, "");
 
         // Bob takes position 3 ETH on NO
         vm.prank(bob);
-        parimutuel.takePosition{value: 3 ether}(betId, false);
+        parimutuel.takePosition{value: 3 ether}(betId, false, "");
 
         // Charlie takes position 1 ETH on YES
         vm.prank(charlie);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         // Verify total states and user positions using new struct interface
         ParimutuelBetV0.BetWithUserData memory aliceData = parimutuel.getBetWithUserData(betId, alice);
@@ -107,15 +107,15 @@ contract ParimutuelBetV0Test is Test {
 
         // Alice bets 1 ETH on YES
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         // Bob bets 2 ETH on NO
         vm.prank(bob);
-        parimutuel.takePosition{value: 2 ether}(betId, false);
+        parimutuel.takePosition{value: 2 ether}(betId, false, "");
 
         // Charlie bets 3 ETH on NO
         vm.prank(charlie);
-        parimutuel.takePosition{value: 3 ether}(betId, false);
+        parimutuel.takePosition{value: 3 ether}(betId, false, "");
 
         // Move past deadline
         vm.warp(block.timestamp + 1 days + 1);
@@ -156,7 +156,7 @@ contract ParimutuelBetV0Test is Test {
         uint256 betId = parimutuel.createBet("Test question", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         // Resolve and claim
         vm.warp(block.timestamp + 1 days + 1);
@@ -182,7 +182,7 @@ contract ParimutuelBetV0Test is Test {
         // Try to bet - should fail
         vm.prank(alice);
         vm.expectRevert("Betting period has ended");
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
     }
 
     function test_OnlyCreatorCanResolve() public {
@@ -199,5 +199,62 @@ contract ParimutuelBetV0Test is Test {
         // Creator can resolve - should succeed
         vm.prank(creator);
         parimutuel.resolve(betId, true);
+    }
+
+    // ============================================
+    // SECURITY TESTS - Deadline Validation
+    // ============================================
+
+    function test_CannotCreateBetWithDeadlineInPast() public {
+        vm.prank(creator);
+        vm.expectRevert("Deadline must be in future");
+        parimutuel.createBet("Test question", block.timestamp - 1, creator);
+    }
+
+    function test_CannotCreateBetWithDeadlineTooFarInFuture() public {
+        // Try to create bet with deadline > 365 days in future
+        uint256 tooFarDeadline = block.timestamp + 366 days;
+
+        vm.prank(creator);
+        vm.expectRevert("Deadline too far in future");
+        parimutuel.createBet("Test question", tooFarDeadline, creator);
+    }
+
+    function test_CanCreateBetWithMaximumValidDeadline() public {
+        // Create bet with exactly 365 days deadline (should succeed)
+        uint256 maxValidDeadline = block.timestamp + 365 days;
+
+        vm.prank(creator);
+        uint256 betId = parimutuel.createBet("Test question", maxValidDeadline, creator);
+
+        // Verify bet was created by checking the question
+        (,, string memory question,,,,,,) = parimutuel.bets(betId);
+        assertEq(question, "Test question");
+    }
+
+    function test_CannotCreateBetWithExtremelyFarDeadline() public {
+        // Try to create bet with deadline at max uint256 (year ~584 billion)
+        uint256 extremeDeadline = type(uint256).max - 1;
+
+        vm.prank(creator);
+        vm.expectRevert("Deadline too far in future");
+        parimutuel.createBet("Will humanity still exist?", extremeDeadline, creator);
+    }
+
+    function test_DeadlineValidationBoundaryConditions() public {
+        // Test deadline at exactly 365 days (should pass)
+        vm.prank(creator);
+        uint256 betId1 = parimutuel.createBet("365 days", block.timestamp + 365 days, creator);
+        assertEq(betId1, 0);
+
+        // Test deadline at 365 days + 1 second (should fail)
+        vm.prank(creator);
+        vm.expectRevert("Deadline too far in future");
+        parimutuel.createBet("365 days + 1 sec", block.timestamp + 365 days + 1, creator);
+
+        // Test deadline at 1 second in future (should pass)
+        vm.prank(creator);
+        uint256 betId2 = parimutuel.createBet("1 second", block.timestamp + 1, creator);
+        assertEq(betId2, 1);
     }
 }

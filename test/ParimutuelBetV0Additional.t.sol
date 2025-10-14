@@ -29,10 +29,10 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         // Place bets
         vm.prank(alice);
-        parimutuel.takePosition{value: 2 ether}(betId, true);
+        parimutuel.takePosition{value: 2 ether}(betId, true, "");
 
         vm.prank(bob);
-        parimutuel.takePosition{value: 3 ether}(betId, false);
+        parimutuel.takePosition{value: 3 ether}(betId, false, "");
 
         // Move past deadline + refund period
         vm.warp(block.timestamp + 1 days + 7 days + 1);
@@ -57,7 +57,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         vm.warp(block.timestamp + 1 days + 7 days + 1);
 
@@ -74,7 +74,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         // Only move past deadline, not refund period
         vm.warp(block.timestamp + 1 days + 1);
@@ -89,7 +89,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         // Resolve before refund period
         vm.warp(block.timestamp + 1 days + 1);
@@ -111,7 +111,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         // Only YES bets
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         vm.warp(block.timestamp + 1 days + 1);
 
@@ -133,7 +133,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         // Only NO bets
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, false);
+        parimutuel.takePosition{value: 1 ether}(betId, false, "");
 
         vm.warp(block.timestamp + 1 days + 1);
 
@@ -169,13 +169,13 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("Amount must be greater than 0");
-        parimutuel.takePosition{value: 0}(betId, true);
+        parimutuel.takePosition{value: 0}(betId, true, "");
     }
 
     function test_BetOnNonexistentMarket() public {
         vm.prank(alice);
         vm.expectRevert("Bet does not exist");
-        parimutuel.takePosition{value: 1 ether}(999, true);
+        parimutuel.takePosition{value: 1 ether}(999, true, "");
     }
 
     function test_BetAfterDeadlinePrecedesResolvedCheck() public {
@@ -183,7 +183,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         // Move past deadline and resolve
         vm.warp(block.timestamp + 1 days + 1);
@@ -193,7 +193,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         // Try to bet - deadline check comes before resolved check
         vm.prank(bob);
         vm.expectRevert("Betting period has ended");
-        parimutuel.takePosition{value: 1 ether}(betId, false);
+        parimutuel.takePosition{value: 1 ether}(betId, false, "");
     }
 
     // Test multiple bets by same user
@@ -203,14 +203,14 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         // Alice makes multiple YES bets
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 2 ether}(betId, true);
+        parimutuel.takePosition{value: 2 ether}(betId, true, "");
 
         // Alice also makes a NO bet
         vm.prank(alice);
-        parimutuel.takePosition{value: 0.5 ether}(betId, false);
+        parimutuel.takePosition{value: 0.5 ether}(betId, false, "");
 
         // Verify accumulated bets
         ParimutuelBetV0.BetWithUserData memory aliceData = parimutuel.getBetWithUserData(betId, alice);
@@ -254,7 +254,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         vm.prank(alice);
         vm.expectRevert("Bet not resolved");
@@ -284,8 +284,8 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         vm.prank(alice);
         vm.expectEmit(true, true, false, true);
-        emit PositionTaken(betId, alice, true, 1 ether, 1 ether, 0);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        emit PositionTaken(betId, alice, true, 1 ether, 1 ether, 0, "");
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         vm.warp(block.timestamp + 1 days + 1);
         vm.prank(creator);
@@ -305,10 +305,10 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 2 ether}(betId, true);
+        parimutuel.takePosition{value: 2 ether}(betId, true, "");
 
         vm.prank(bob);
-        parimutuel.takePosition{value: 3 ether}(betId, false);
+        parimutuel.takePosition{value: 3 ether}(betId, false, "");
 
         // Check pools before refund
         ParimutuelBetV0.BetWithUserData memory dataBefore = parimutuel.getBetWithUserData(betId, address(0));
@@ -341,10 +341,10 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         // Place bets
         vm.prank(alice);
-        parimutuel.takePosition{value: 2 ether}(betId, true);
+        parimutuel.takePosition{value: 2 ether}(betId, true, "");
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, false);
+        parimutuel.takePosition{value: 1 ether}(betId, false, "");
 
         // Move past deadline + refund period
         vm.warp(block.timestamp + 1 days + 7 days + 1);
@@ -447,10 +447,10 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 2 ether}(betId, true);
+        parimutuel.takePosition{value: 2 ether}(betId, true, "");
 
         vm.prank(bob);
-        parimutuel.takePosition{value: 3 ether}(betId, false);
+        parimutuel.takePosition{value: 3 ether}(betId, false, "");
 
         // Move past deadline + refund period
         vm.warp(block.timestamp + 1 days + 7 days + 1);
@@ -470,10 +470,10 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 2 ether}(betId, true);
+        parimutuel.takePosition{value: 2 ether}(betId, true, "");
 
         vm.prank(bob);
-        parimutuel.takePosition{value: 3 ether}(betId, false);
+        parimutuel.takePosition{value: 3 ether}(betId, false, "");
 
         // Move past deadline + refund period
         vm.warp(block.timestamp + 1 days + 7 days + 1);
@@ -500,7 +500,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         // Receiver contract places bet
         vm.prank(address(receiver));
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         vm.warp(block.timestamp + 1 days + 1);
         vm.prank(creator);
@@ -522,7 +522,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(address(receiver));
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         vm.warp(block.timestamp + 1 days + 7 days + 1);
 
@@ -534,9 +534,17 @@ contract ParimutuelBetV0AdditionalTest is Test {
     }
 
     // Events to match contract
-    event BetCreated(uint256 indexed betId, address indexed creator, address indexed resolver, string question, uint256 deadline);
+    event BetCreated(
+        uint256 indexed betId, address indexed creator, address indexed resolver, string question, uint256 deadline
+    );
     event PositionTaken(
-        uint256 indexed betId, address indexed user, bool isYes, uint256 amount, uint256 yesTotal, uint256 noTotal
+        uint256 indexed betId,
+        address indexed user,
+        bool isYes,
+        uint256 amount,
+        uint256 yesTotal,
+        uint256 noTotal,
+        string displayName
     );
     event BetResolved(uint256 indexed betId, bool outcome, uint256 yesTotal, uint256 noTotal);
     event Claimed(uint256 indexed betId, address indexed user, uint256 amount, address indexed triggeredBy);
@@ -553,7 +561,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         // Alice bets
         vm.prank(alice);
-        parimutuel.takePosition{value: 2 ether}(betId, true);
+        parimutuel.takePosition{value: 2 ether}(betId, true, "");
 
         // Resolve
         vm.warp(block.timestamp + 1 days + 1);
@@ -576,7 +584,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         vm.warp(block.timestamp + 1 days + 1);
         vm.prank(creator);
@@ -595,7 +603,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         vm.warp(block.timestamp + 1 days + 1);
         vm.prank(creator);
@@ -616,7 +624,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         vm.warp(block.timestamp + 1 days + 1);
         vm.prank(creator);
@@ -644,10 +652,10 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         // Alice and Bob bet
         vm.prank(alice);
-        parimutuel.takePosition{value: 2 ether}(betId, true);
+        parimutuel.takePosition{value: 2 ether}(betId, true, "");
 
         vm.prank(bob);
-        parimutuel.takePosition{value: 1 ether}(betId, false);
+        parimutuel.takePosition{value: 1 ether}(betId, false, "");
 
         // Move past refund period
         vm.warp(block.timestamp + 1 days + 7 days + 1);
@@ -669,7 +677,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 3 ether}(betId, true);
+        parimutuel.takePosition{value: 3 ether}(betId, true, "");
 
         // Move past refund period
         vm.warp(block.timestamp + 1 days + 7 days + 1);
@@ -687,7 +695,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 2 ether}(betId, true);
+        parimutuel.takePosition{value: 2 ether}(betId, true, "");
 
         // Move past refund period
         vm.warp(block.timestamp + 1 days + 7 days + 1);
@@ -707,7 +715,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 2 ether}(betId, true);
+        parimutuel.takePosition{value: 2 ether}(betId, true, "");
 
         // Move past refund period
         vm.warp(block.timestamp + 1 days + 7 days + 1);
@@ -733,10 +741,10 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
-        parimutuel.takePosition{value: 2 ether}(betId, true);
+        parimutuel.takePosition{value: 2 ether}(betId, true, "");
 
         vm.prank(bob);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         // Resolve
         vm.warp(block.timestamp + 1 days + 1);
@@ -771,7 +779,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         // Alice places bet
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         // Move past deadline
         vm.warp(block.timestamp + 1 days + 1);
@@ -793,7 +801,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         // Alice places bet
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         // Move past deadline
         vm.warp(block.timestamp + 1 days + 1);
@@ -811,7 +819,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         // Alice places bet
         vm.prank(alice);
-        parimutuel.takePosition{value: 1 ether}(betId, true);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         // Move past deadline
         vm.warp(block.timestamp + 1 days + 1);

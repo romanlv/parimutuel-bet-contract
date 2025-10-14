@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract ParimutuelBetV0 is ReentrancyGuard {
-    string public constant VERSION = "0.6.0";
+    string public constant VERSION = "0.7.1";
 
     struct Bet {
         address creator;
@@ -52,6 +52,7 @@ contract ParimutuelBetV0 is ReentrancyGuard {
     mapping(uint256 => mapping(address => uint256)) public noPositions;
     mapping(uint256 => mapping(address => bool)) public hasClaimed;
     mapping(uint256 => mapping(address => bool)) public hasRefunded;
+    mapping(uint256 => mapping(address => string)) public displayNames;
 
     // Track total claimed/refunded amounts for accurate payout calculations
     mapping(uint256 => uint256) public yesTotalClaimed;
@@ -61,15 +62,24 @@ contract ParimutuelBetV0 is ReentrancyGuard {
 
     uint256 public nextBetId;
     uint256 public constant REFUND_PERIOD = 7 days;
+    uint256 public constant MAX_DEADLINE_DURATION = 365 days;
 
     // Bet tracking for efficient queries
     uint256[] private allBetIds;
     mapping(address => uint256[]) private userBetIds;
     mapping(address => uint256[]) private creatorBetIds;
 
-    event BetCreated(uint256 indexed betId, address indexed creator, address indexed resolver, string question, uint256 deadline);
+    event BetCreated(
+        uint256 indexed betId, address indexed creator, address indexed resolver, string question, uint256 deadline
+    );
     event PositionTaken(
-        uint256 indexed betId, address indexed user, bool isYes, uint256 amount, uint256 yesTotal, uint256 noTotal
+        uint256 indexed betId,
+        address indexed user,
+        bool isYes,
+        uint256 amount,
+        uint256 yesTotal,
+        uint256 noTotal,
+        string displayName
     );
     event BetResolved(uint256 indexed betId, bool outcome, uint256 yesTotal, uint256 noTotal);
     event Claimed(uint256 indexed betId, address indexed user, uint256 amount, address indexed triggeredBy);
@@ -77,6 +87,7 @@ contract ParimutuelBetV0 is ReentrancyGuard {
 
     function createBet(string memory question, uint256 deadline, address resolver) external returns (uint256) {
         require(deadline > block.timestamp, "Deadline must be in future");
+        require(deadline <= block.timestamp + MAX_DEADLINE_DURATION, "Deadline too far in future");
         require(resolver != address(0), "Resolver cannot be zero address");
 
         uint256 betId = nextBetId++;
@@ -100,11 +111,17 @@ contract ParimutuelBetV0 is ReentrancyGuard {
         return betId;
     }
 
-    function takePosition(uint256 betId, bool isYes) external payable {
+    function takePosition(uint256 betId, bool isYes, string calldata displayName) external payable {
         require(msg.value > 0, "Amount must be greater than 0");
         require(bets[betId].creator != address(0), "Bet does not exist");
         require(block.timestamp < bets[betId].deadline, "Betting period has ended");
         require(!bets[betId].resolved, "Bet already resolved");
+
+        // Only store displayName if it's not empty (gas optimization)
+        if (bytes(displayName).length > 0) {
+            require(bytes(displayName).length <= 32, "Display name too long");
+            displayNames[betId][msg.sender] = displayName;
+        }
 
         // Track user's first position on this bet
         if (yesPositions[betId][msg.sender] == 0 && noPositions[betId][msg.sender] == 0) {
@@ -119,7 +136,7 @@ contract ParimutuelBetV0 is ReentrancyGuard {
             bets[betId].noTotal += msg.value;
         }
 
-        emit PositionTaken(betId, msg.sender, isYes, msg.value, bets[betId].yesTotal, bets[betId].noTotal);
+        emit PositionTaken(betId, msg.sender, isYes, msg.value, bets[betId].yesTotal, bets[betId].noTotal, displayName);
     }
 
     function resolve(uint256 betId, bool outcome) external {
@@ -329,11 +346,7 @@ contract ParimutuelBetV0 is ReentrancyGuard {
      * @param limit Maximum number of bets to return
      * @return result PaginatedBetIds struct with ids array and hasMore flag
      */
-    function getResolvedBetIds(uint256 offset, uint256 limit)
-        external
-        view
-        returns (PaginatedBetIds memory result)
-    {
+    function getResolvedBetIds(uint256 offset, uint256 limit) external view returns (PaginatedBetIds memory result) {
         uint256 totalBets = allBetIds.length;
         if (offset >= totalBets) {
             return PaginatedBetIds({ids: new uint256[](0), hasMore: false});
@@ -526,6 +539,30 @@ contract ParimutuelBetV0 is ReentrancyGuard {
     // ============================================
 
     /**
+     * @notice Get display name for a user on a specific bet
+     * @param betId The bet ID to query
+     * @param user Address of the user
+     * @return Display name string (empty if not set)
+     */
+    function getDisplayName(uint256 betId, address user) external view returns (string memory) {
+        return displayNames[betId][user];
+    }
+
+    /**
+     * @notice Batch get display names for multiple users on a specific bet
+     * @param betId The bet ID to query
+     * @param users Array of user addresses
+     * @return names Array of display names corresponding to users
+     */
+    function getDisplayNames(uint256 betId, address[] calldata users) external view returns (string[] memory names) {
+        names = new string[](users.length);
+        for (uint256 i = 0; i < users.length; i++) {
+            names[i] = displayNames[betId][users[i]];
+        }
+        return names;
+    }
+
+    /**
      * @notice Get comprehensive statistics for a bet
      * @param betId The bet ID to query
      * @return stats BetStats struct with totals and claim/refund information
@@ -548,11 +585,7 @@ contract ParimutuelBetV0 is ReentrancyGuard {
      * @param user Address of the user
      * @return data BetWithUserData struct containing all bet and user information
      */
-    function getBetWithUserData(uint256 betId, address user)
-        external
-        view
-        returns (BetWithUserData memory data)
-    {
+    function getBetWithUserData(uint256 betId, address user) external view returns (BetWithUserData memory data) {
         data.bet = bets[betId];
         data.userYesPosition = yesPositions[betId][user];
         data.userNoPosition = noPositions[betId][user];
