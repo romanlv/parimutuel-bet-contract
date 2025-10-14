@@ -214,3 +214,11 @@ Potential Win: 4.16 USDC
 
 [Share Bet] [Copy Link]
 ```
+
+
+## improvements
+- ERC20 tokens 
+- names of people who bet, optional field
+- resolvers cannot bet
+- pagintation and others goodies to query the data
+

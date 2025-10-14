@@ -9,6 +9,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
     address public alice = makeAddr("alice");
     address public bob = makeAddr("bob");
+    address public charlie = makeAddr("charlie");
     address public creator = makeAddr("creator");
 
     uint256 constant INITIAL_BALANCE = 10 ether;
@@ -17,6 +18,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         parimutuel = new ParimutuelBetV0();
         vm.deal(alice, INITIAL_BALANCE);
         vm.deal(bob, INITIAL_BALANCE);
+        vm.deal(charlie, INITIAL_BALANCE);
         vm.deal(creator, INITIAL_BALANCE);
     }
 
@@ -40,10 +42,10 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         // Test refund
         vm.prank(alice);
-        parimutuel.refund(marketId);
+        parimutuel.refund(marketId, address(0));
 
         vm.prank(bob);
-        parimutuel.refund(marketId);
+        parimutuel.refund(marketId, address(0));
 
         // Verify refunds
         assertEq(alice.balance, aliceBalanceBefore + 2 ether);
@@ -60,11 +62,11 @@ contract ParimutuelBetV0AdditionalTest is Test {
         vm.warp(block.timestamp + 1 days + 7 days + 1);
 
         vm.prank(alice);
-        parimutuel.refund(marketId);
+        parimutuel.refund(marketId, address(0));
 
         vm.prank(alice);
         vm.expectRevert("Already refunded");
-        parimutuel.refund(marketId);
+        parimutuel.refund(marketId, address(0));
     }
 
     function test_RefundBeforeRefundPeriod() public {
@@ -79,7 +81,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("Refund period not reached");
-        parimutuel.refund(marketId);
+        parimutuel.refund(marketId, address(0));
     }
 
     function test_RefundAfterResolution() public {
@@ -99,7 +101,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("Market already resolved");
-        parimutuel.refund(marketId);
+        parimutuel.refund(marketId, address(0));
     }
 
     // Test single-sided betting scenarios
@@ -120,7 +122,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         // Alice should get full pot since she's the only bettor
         uint256 balanceBefore = alice.balance;
         vm.prank(alice);
-        parimutuel.claim(marketId);
+        parimutuel.claim(marketId, address(0));
 
         assertEq(alice.balance, balanceBefore + 1 ether);
     }
@@ -142,7 +144,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         // Alice should get full pot since she's the only bettor
         uint256 balanceBefore = alice.balance;
         vm.prank(alice);
-        parimutuel.claim(marketId);
+        parimutuel.claim(marketId, address(0));
 
         assertEq(alice.balance, balanceBefore + 1 ether);
     }
@@ -211,9 +213,9 @@ contract ParimutuelBetV0AdditionalTest is Test {
         parimutuel.placeBet{value: 0.5 ether}(marketId, false);
 
         // Verify accumulated bets
-        (uint256 yesAmount, uint256 noAmount) = parimutuel.getUserBets(marketId, alice);
-        assertEq(yesAmount, 3 ether);
-        assertEq(noAmount, 0.5 ether);
+        ParimutuelBetV0.MarketWithUserData memory aliceData = parimutuel.getMarketWithUserData(marketId, alice);
+        assertEq(aliceData.userYesBet, 3 ether);
+        assertEq(aliceData.userNoBet, 0.5 ether);
     }
 
     // Test resolution edge cases
@@ -256,7 +258,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("Market not resolved");
-        parimutuel.claim(marketId);
+        parimutuel.claim(marketId, address(0));
     }
 
     function test_ClaimEmptyMarket() public {
@@ -269,8 +271,8 @@ contract ParimutuelBetV0AdditionalTest is Test {
         parimutuel.resolve(marketId, true);
 
         vm.prank(alice);
-        vm.expectRevert("No bets to claim");
-        parimutuel.claim(marketId);
+        vm.expectRevert("No winning bet to claim");
+        parimutuel.claim(marketId, address(0));
     }
 
     // Test events
@@ -282,19 +284,19 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         vm.prank(alice);
         vm.expectEmit(true, true, false, true);
-        emit BetPlaced(marketId, alice, true, 1 ether);
+        emit BetPlaced(marketId, alice, true, 1 ether, 1 ether, 0);
         parimutuel.placeBet{value: 1 ether}(marketId, true);
 
         vm.warp(block.timestamp + 1 days + 1);
         vm.prank(creator);
         vm.expectEmit(true, false, false, true);
-        emit MarketResolved(marketId, true);
+        emit MarketResolved(marketId, true, 1 ether, 0);
         parimutuel.resolve(marketId, true);
 
         vm.prank(alice);
-        vm.expectEmit(true, true, false, true);
-        emit Claimed(marketId, alice, 1 ether);
-        parimutuel.claim(marketId);
+        vm.expectEmit(true, true, true, true);
+        emit Claimed(marketId, alice, 1 ether, alice);
+        parimutuel.claim(marketId, address(0));
     }
 
     // Pool accounting after refunds
@@ -309,28 +311,464 @@ contract ParimutuelBetV0AdditionalTest is Test {
         parimutuel.placeBet{value: 3 ether}(marketId, false);
 
         // Check pools before refund
-        (uint256 yesPoolBefore, uint256 noPoolBefore,) = parimutuel.getMarketPools(marketId);
+        ParimutuelBetV0.MarketWithUserData memory dataBefore = parimutuel.getMarketWithUserData(marketId, address(0));
+        uint256 yesPoolBefore = dataBefore.market.yesPool;
+        uint256 noPoolBefore = dataBefore.market.noPool;
         assertEq(yesPoolBefore, 2 ether);
         assertEq(noPoolBefore, 3 ether);
 
         // Refund Alice
         vm.warp(block.timestamp + 1 days + 7 days + 1);
         vm.prank(alice);
-        parimutuel.refund(marketId);
+        parimutuel.refund(marketId, address(0));
 
         // Pool accounting after refund - pools are not updated
-        (uint256 yesPoolAfter,, uint256 totalAfter) = parimutuel.getMarketPools(marketId);
+        ParimutuelBetV0.MarketWithUserData memory dataAfter = parimutuel.getMarketWithUserData(marketId, address(0));
+        uint256 yesPoolAfter = dataAfter.market.yesPool;
+        uint256 totalAfter = dataAfter.market.yesPool + dataAfter.market.noPool;
 
         // Current behavior: pools not updated after refunds
-        assertEq(yesPoolAfter, 2 ether);  // Pool shows original amount
-        assertEq(totalAfter, 5 ether);    // Total shows original sum
-        assertEq(address(parimutuel).balance, 3 ether);  // Actual contract balance is different
+        assertEq(yesPoolAfter, 2 ether); // Pool shows original amount
+        assertEq(totalAfter, 5 ether); // Total shows original sum
+        assertEq(address(parimutuel).balance, 3 ether); // Actual contract balance is different
+    }
+
+    // Test new query functions
+    function test_GetUserRefundable() public {
+        // Create market
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        // Place bets
+        vm.prank(alice);
+        parimutuel.placeBet{value: 2 ether}(marketId, true);
+
+        vm.prank(alice);
+        parimutuel.placeBet{value: 1 ether}(marketId, false);
+
+        // Move past deadline + refund period
+        vm.warp(block.timestamp + 1 days + 7 days + 1);
+
+        // Check refundable
+        ParimutuelBetV0.UserPosition memory refundable = parimutuel.getUserRefundable(alice);
+
+        assertEq(refundable.marketIds.length, 1);
+        assertEq(refundable.marketIds[0], marketId);
+        assertEq(refundable.amounts[0], 3 ether); // 2 + 1
+
+        // After refund, should be empty
+        vm.prank(alice);
+        parimutuel.refund(marketId, address(0));
+
+        refundable = parimutuel.getUserRefundable(alice);
+        assertEq(refundable.marketIds.length, 0);
+    }
+
+    function test_GetAwaitingResolutionIds() public {
+        // Create multiple markets
+        vm.prank(creator);
+        uint256 market1 = parimutuel.createMarket("Market 1", block.timestamp + 1 days);
+
+        vm.prank(creator);
+        uint256 market2 = parimutuel.createMarket("Market 2", block.timestamp + 2 days);
+
+        vm.prank(creator);
+        uint256 market3 = parimutuel.createMarket("Market 3", block.timestamp + 3 days);
+
+        // Move past first deadline
+        vm.warp(block.timestamp + 1 days + 1);
+
+        ParimutuelBetV0.PaginatedMarketIds memory result = parimutuel.getAwaitingResolutionIds(0, 10);
+        assertEq(result.ids.length, 1);
+        assertEq(result.ids[0], market1);
+        assertFalse(result.hasMore);
+
+        // Move past second deadline
+        vm.warp(block.timestamp + 1 days);
+
+        result = parimutuel.getAwaitingResolutionIds(0, 10);
+        assertEq(result.ids.length, 2);
+        assertEq(result.ids[0], market1);
+        assertEq(result.ids[1], market2);
+        assertFalse(result.hasMore);
+
+        // Resolve market1
+        vm.prank(creator);
+        parimutuel.resolve(market1, true);
+
+        result = parimutuel.getAwaitingResolutionIds(0, 10);
+        assertEq(result.ids.length, 1);
+        assertEq(result.ids[0], market2);
+    }
+
+    function test_MarketCreatedAtTimestamp() public {
+        uint256 creationTime = block.timestamp;
+
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        ParimutuelBetV0.MarketWithUserData memory data = parimutuel.getMarketWithUserData(marketId, address(0));
+        assertEq(data.market.createdAt, creationTime);
+    }
+
+    function test_GetAwaitingResolutionPagination() public {
+        // Create 5 markets that will need resolution
+        for (uint256 i = 0; i < 5; i++) {
+            vm.prank(creator);
+            parimutuel.createMarket(string(abi.encodePacked("Market ", i)), block.timestamp + 1 days);
+        }
+
+        // Move past deadline
+        vm.warp(block.timestamp + 1 days + 1);
+
+        // Test pagination with limit 2
+        ParimutuelBetV0.PaginatedMarketIds memory result = parimutuel.getAwaitingResolutionIds(0, 2);
+        assertEq(result.ids.length, 2);
+        assertTrue(result.hasMore);
+
+        // Get next page
+        result = parimutuel.getAwaitingResolutionIds(2, 2);
+        assertEq(result.ids.length, 2);
+        assertTrue(result.hasMore);
+
+        // Get last page
+        result = parimutuel.getAwaitingResolutionIds(4, 2);
+        assertEq(result.ids.length, 1);
+        assertFalse(result.hasMore);
+    }
+
+    // ============================================
+    // SECURITY FIX TESTS
+    // ============================================
+
+    // Test that resolve fails after any refunds have been claimed
+    function test_CannotResolveAfterRefunds() public {
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        vm.prank(alice);
+        parimutuel.placeBet{value: 2 ether}(marketId, true);
+
+        vm.prank(bob);
+        parimutuel.placeBet{value: 3 ether}(marketId, false);
+
+        // Move past deadline + refund period
+        vm.warp(block.timestamp + 1 days + 7 days + 1);
+
+        // Alice refunds
+        vm.prank(alice);
+        parimutuel.refund(marketId, address(0));
+
+        // Now creator tries to resolve - should fail
+        vm.prank(creator);
+        vm.expectRevert("Cannot resolve after refunds have been claimed");
+        parimutuel.resolve(marketId, true);
+    }
+
+    function test_CannotResolveAfterPartialRefunds() public {
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        vm.prank(alice);
+        parimutuel.placeBet{value: 2 ether}(marketId, true);
+
+        vm.prank(bob);
+        parimutuel.placeBet{value: 3 ether}(marketId, false);
+
+        // Move past deadline + refund period
+        vm.warp(block.timestamp + 1 days + 7 days + 1);
+
+        // Only alice refunds
+        vm.prank(alice);
+        parimutuel.refund(marketId, address(0));
+
+        // Creator tries to resolve - should fail even if only partial refunds
+        vm.prank(creator);
+        vm.expectRevert("Cannot resolve after refunds have been claimed");
+        parimutuel.resolve(marketId, true);
+    }
+
+    // Test that ETH transfers work with call() instead of transfer()
+    // This would test smart contract wallets that need more than 2300 gas
+    function test_ClaimWorksWithHighGasRecipient() public {
+        // Deploy a contract that consumes more gas in receive
+        HighGasReceiver receiver = new HighGasReceiver();
+        vm.deal(address(receiver), INITIAL_BALANCE);
+
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        // Receiver contract places bet
+        vm.prank(address(receiver));
+        parimutuel.placeBet{value: 1 ether}(marketId, true);
+
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.prank(creator);
+        parimutuel.resolve(marketId, true);
+
+        // Receiver should be able to claim (would fail with transfer())
+        uint256 balanceBefore = address(receiver).balance;
+        vm.prank(address(receiver));
+        parimutuel.claim(marketId, address(0));
+
+        assertEq(address(receiver).balance, balanceBefore + 1 ether);
+    }
+
+    function test_RefundWorksWithHighGasRecipient() public {
+        HighGasReceiver receiver = new HighGasReceiver();
+        vm.deal(address(receiver), INITIAL_BALANCE);
+
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        vm.prank(address(receiver));
+        parimutuel.placeBet{value: 1 ether}(marketId, true);
+
+        vm.warp(block.timestamp + 1 days + 7 days + 1);
+
+        uint256 balanceBefore = address(receiver).balance;
+        vm.prank(address(receiver));
+        parimutuel.refund(marketId, address(0));
+
+        assertEq(address(receiver).balance, balanceBefore + 1 ether);
     }
 
     // Events to match contract
     event MarketCreated(uint256 indexed marketId, address indexed creator, string question, uint256 deadline);
-    event BetPlaced(uint256 indexed marketId, address indexed bettor, bool betYes, uint256 amount);
-    event MarketResolved(uint256 indexed marketId, bool outcome);
-    event Claimed(uint256 indexed marketId, address indexed claimer, uint256 amount);
-    event Refunded(uint256 indexed marketId, address indexed refundee, uint256 amount);
+    event BetPlaced(
+        uint256 indexed marketId, address indexed bettor, bool betYes, uint256 amount, uint256 yesPool, uint256 noPool
+    );
+    event MarketResolved(uint256 indexed marketId, bool outcome, uint256 yesPool, uint256 noPool);
+    event Claimed(uint256 indexed marketId, address indexed claimer, uint256 amount, address indexed triggeredBy);
+    event Refunded(uint256 indexed marketId, address indexed refundee, uint256 amount, address indexed triggeredBy);
+
+    // ============================================
+    // CLAIM FOR / REFUND FOR TESTS
+    // ============================================
+
+    function test_ClaimForAnotherUser() public {
+        // Setup market
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        // Alice bets
+        vm.prank(alice);
+        parimutuel.placeBet{value: 2 ether}(marketId, true);
+
+        // Resolve
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.prank(creator);
+        parimutuel.resolve(marketId, true);
+
+        // Bob claims on behalf of Alice
+        uint256 aliceBalanceBefore = alice.balance;
+        vm.prank(bob);
+        parimutuel.claim(marketId, alice);
+
+        // Verify Alice received the funds (not Bob)
+        assertEq(alice.balance, aliceBalanceBefore + 2 ether);
+        assertTrue(parimutuel.hasClaimed(marketId, alice));
+    }
+
+    function test_ClaimForEmitsCorrectEvent() public {
+        // Setup and resolve market
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        vm.prank(alice);
+        parimutuel.placeBet{value: 1 ether}(marketId, true);
+
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.prank(creator);
+        parimutuel.resolve(marketId, true);
+
+        // Bob claims for Alice - event should show Alice as claimer, Bob as triggerer
+        vm.prank(bob);
+        vm.expectEmit(true, true, true, true);
+        emit Claimed(marketId, alice, 1 ether, bob);
+        parimutuel.claim(marketId, alice);
+    }
+
+    function test_ClaimForSelfWithAddressZero() public {
+        // Setup and resolve market
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        vm.prank(alice);
+        parimutuel.placeBet{value: 1 ether}(marketId, true);
+
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.prank(creator);
+        parimutuel.resolve(marketId, true);
+
+        // Alice claims with address(0), should default to msg.sender
+        uint256 aliceBalanceBefore = alice.balance;
+        vm.prank(alice);
+        parimutuel.claim(marketId, address(0));
+
+        assertEq(alice.balance, aliceBalanceBefore + 1 ether);
+        assertTrue(parimutuel.hasClaimed(marketId, alice));
+    }
+
+    function test_CannotClaimForSameUserTwice() public {
+        // Setup and resolve market
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        vm.prank(alice);
+        parimutuel.placeBet{value: 1 ether}(marketId, true);
+
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.prank(creator);
+        parimutuel.resolve(marketId, true);
+
+        // Bob claims for Alice
+        vm.prank(bob);
+        parimutuel.claim(marketId, alice);
+
+        // Try to claim again - should fail
+        vm.prank(bob);
+        vm.expectRevert("Already claimed");
+        parimutuel.claim(marketId, alice);
+
+        // Alice also cannot claim for herself
+        vm.prank(alice);
+        vm.expectRevert("Already claimed");
+        parimutuel.claim(marketId, address(0));
+    }
+
+    function test_RefundForAnotherUser() public {
+        // Setup market
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        // Alice and Bob bet
+        vm.prank(alice);
+        parimutuel.placeBet{value: 2 ether}(marketId, true);
+
+        vm.prank(bob);
+        parimutuel.placeBet{value: 1 ether}(marketId, false);
+
+        // Move past refund period
+        vm.warp(block.timestamp + 1 days + 7 days + 1);
+
+        // Charlie triggers refund for Alice
+        uint256 aliceBalanceBefore = alice.balance;
+        vm.prank(charlie);
+        parimutuel.refund(marketId, alice);
+
+        // Verify Alice received the refund (not Charlie)
+        assertEq(alice.balance, aliceBalanceBefore + 2 ether);
+        assertTrue(parimutuel.hasRefunded(marketId, alice));
+        assertFalse(parimutuel.hasRefunded(marketId, charlie));
+    }
+
+    function test_RefundForEmitsCorrectEvent() public {
+        // Setup market
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        vm.prank(alice);
+        parimutuel.placeBet{value: 3 ether}(marketId, true);
+
+        // Move past refund period
+        vm.warp(block.timestamp + 1 days + 7 days + 1);
+
+        // Bob triggers refund for Alice - event should show Alice as refundee, Bob as triggerer
+        vm.prank(bob);
+        vm.expectEmit(true, true, true, true);
+        emit Refunded(marketId, alice, 3 ether, bob);
+        parimutuel.refund(marketId, alice);
+    }
+
+    function test_RefundForSelfWithAddressZero() public {
+        // Setup market
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        vm.prank(alice);
+        parimutuel.placeBet{value: 2 ether}(marketId, true);
+
+        // Move past refund period
+        vm.warp(block.timestamp + 1 days + 7 days + 1);
+
+        // Alice refunds with address(0), should default to msg.sender
+        uint256 aliceBalanceBefore = alice.balance;
+        vm.prank(alice);
+        parimutuel.refund(marketId, address(0));
+
+        assertEq(alice.balance, aliceBalanceBefore + 2 ether);
+        assertTrue(parimutuel.hasRefunded(marketId, alice));
+    }
+
+    function test_CannotRefundForSameUserTwice() public {
+        // Setup market
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        vm.prank(alice);
+        parimutuel.placeBet{value: 2 ether}(marketId, true);
+
+        // Move past refund period
+        vm.warp(block.timestamp + 1 days + 7 days + 1);
+
+        // Bob triggers refund for Alice
+        vm.prank(bob);
+        parimutuel.refund(marketId, alice);
+
+        // Try to refund again - should fail
+        vm.prank(bob);
+        vm.expectRevert("Already refunded");
+        parimutuel.refund(marketId, alice);
+
+        // Alice also cannot refund for herself
+        vm.prank(alice);
+        vm.expectRevert("Already refunded");
+        parimutuel.refund(marketId, address(0));
+    }
+
+    function test_MultipleUsersCanClaimForDifferentBeneficiaries() public {
+        // Setup market with multiple winners
+        vm.prank(creator);
+        uint256 marketId = parimutuel.createMarket("Test", block.timestamp + 1 days);
+
+        vm.prank(alice);
+        parimutuel.placeBet{value: 2 ether}(marketId, true);
+
+        vm.prank(bob);
+        parimutuel.placeBet{value: 1 ether}(marketId, true);
+
+        // Resolve
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.prank(creator);
+        parimutuel.resolve(marketId, true);
+
+        // Charlie helps both Alice and Bob claim
+        uint256 aliceBalanceBefore = alice.balance;
+        uint256 bobBalanceBefore = bob.balance;
+
+        vm.prank(charlie);
+        parimutuel.claim(marketId, alice);
+
+        vm.prank(charlie);
+        parimutuel.claim(marketId, bob);
+
+        // Verify both received their payouts
+        assertEq(alice.balance, aliceBalanceBefore + 2 ether);
+        assertEq(bob.balance, bobBalanceBefore + 1 ether);
+        assertTrue(parimutuel.hasClaimed(marketId, alice));
+        assertTrue(parimutuel.hasClaimed(marketId, bob));
+    }
+}
+
+// Helper contract for testing call() vs transfer()
+contract HighGasReceiver {
+    uint256 public counter;
+
+    receive() external payable {
+        // Consume more than 2300 gas (would fail with transfer())
+        for (uint256 i = 0; i < 10; i++) {
+            counter += i;
+        }
+    }
 }

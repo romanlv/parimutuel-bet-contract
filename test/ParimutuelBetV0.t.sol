@@ -27,13 +27,7 @@ contract ParimutuelBetV0Test is Test {
     function test_BasicBettingScenario() public {
         // Creator creates a market
         vm.prank(creator);
-        uint256 marketId = parimutuel.createMarket(
-            "Will it rain tomorrow?",
-            block.timestamp + 1 days
-        );
-
-        // Verify market exists
-        assertTrue(parimutuel.marketExists(marketId));
+        uint256 marketId = parimutuel.createMarket("Will it rain tomorrow?", block.timestamp + 1 days);
 
         // Alice bets 2 ETH on YES
         vm.prank(alice);
@@ -47,24 +41,21 @@ contract ParimutuelBetV0Test is Test {
         vm.prank(charlie);
         parimutuel.placeBet{value: 1 ether}(marketId, true);
 
-        // Verify pool states
-        (uint256 yesPool, uint256 noPool, uint256 totalPool) = parimutuel.getMarketPools(marketId);
-        assertEq(yesPool, 3 ether); // Alice (2) + Charlie (1)
-        assertEq(noPool, 3 ether);  // Bob (3)
-        assertEq(totalPool, 6 ether);
+        // Verify pool states and user bets using new struct interface
+        ParimutuelBetV0.MarketWithUserData memory aliceData = parimutuel.getMarketWithUserData(marketId, alice);
 
-        // Verify user bets
-        (uint256 aliceYes, uint256 aliceNo) = parimutuel.getUserBets(marketId, alice);
-        assertEq(aliceYes, 2 ether);
-        assertEq(aliceNo, 0);
+        assertEq(aliceData.market.yesPool, 3 ether); // Alice (2) + Charlie (1)
+        assertEq(aliceData.market.noPool, 3 ether); // Bob (3)
+        assertEq(aliceData.userYesBet, 2 ether);
+        assertEq(aliceData.userNoBet, 0);
 
-        (uint256 bobYes, uint256 bobNo) = parimutuel.getUserBets(marketId, bob);
-        assertEq(bobYes, 0);
-        assertEq(bobNo, 3 ether);
+        ParimutuelBetV0.MarketWithUserData memory bobData = parimutuel.getMarketWithUserData(marketId, bob);
+        assertEq(bobData.userYesBet, 0);
+        assertEq(bobData.userNoBet, 3 ether);
 
-        (uint256 charlieYes, uint256 charlieNo) = parimutuel.getUserBets(marketId, charlie);
-        assertEq(charlieYes, 1 ether);
-        assertEq(charlieNo, 0);
+        ParimutuelBetV0.MarketWithUserData memory charlieData = parimutuel.getMarketWithUserData(marketId, charlie);
+        assertEq(charlieData.userYesBet, 1 ether);
+        assertEq(charlieData.userNoBet, 0);
 
         // Move past deadline
         vm.warp(block.timestamp + 1 days + 1);
@@ -85,11 +76,11 @@ contract ParimutuelBetV0Test is Test {
 
         // Alice claims her winnings
         vm.prank(alice);
-        parimutuel.claim(marketId);
+        parimutuel.claim(marketId, address(0));
 
         // Charlie claims his winnings
         vm.prank(charlie);
-        parimutuel.claim(marketId);
+        parimutuel.claim(marketId, address(0));
 
         // Verify payouts
         assertEq(alice.balance, aliceInitialBalance + 4 ether);
@@ -98,7 +89,7 @@ contract ParimutuelBetV0Test is Test {
         // Bob (loser) should not be able to claim
         vm.prank(bob);
         vm.expectRevert("No winning bet to claim");
-        parimutuel.claim(marketId);
+        parimutuel.claim(marketId, address(0));
 
         // Bob's balance should remain unchanged
         assertEq(bob.balance, bobInitialBalance);
@@ -112,10 +103,7 @@ contract ParimutuelBetV0Test is Test {
     function test_NOWinsScenario() public {
         // Creator creates a market
         vm.prank(creator);
-        uint256 marketId = parimutuel.createMarket(
-            "Will it snow tomorrow?",
-            block.timestamp + 1 days
-        );
+        uint256 marketId = parimutuel.createMarket("Will it snow tomorrow?", block.timestamp + 1 days);
 
         // Alice bets 1 ETH on YES
         vm.prank(alice);
@@ -147,10 +135,10 @@ contract ParimutuelBetV0Test is Test {
 
         // Bob and Charlie claim their winnings
         vm.prank(bob);
-        parimutuel.claim(marketId);
+        parimutuel.claim(marketId, address(0));
 
         vm.prank(charlie);
-        parimutuel.claim(marketId);
+        parimutuel.claim(marketId, address(0));
 
         // Verify payouts
         assertEq(bob.balance, bobInitialBalance + 2.4 ether);
@@ -159,16 +147,13 @@ contract ParimutuelBetV0Test is Test {
         // Alice (loser) should not be able to claim
         vm.prank(alice);
         vm.expectRevert("No winning bet to claim");
-        parimutuel.claim(marketId);
+        parimutuel.claim(marketId, address(0));
     }
 
     function test_DoubleClaimPrevention() public {
         // Setup market and bets
         vm.prank(creator);
-        uint256 marketId = parimutuel.createMarket(
-            "Test question",
-            block.timestamp + 1 days
-        );
+        uint256 marketId = parimutuel.createMarket("Test question", block.timestamp + 1 days);
 
         vm.prank(alice);
         parimutuel.placeBet{value: 1 ether}(marketId, true);
@@ -179,20 +164,17 @@ contract ParimutuelBetV0Test is Test {
         parimutuel.resolve(marketId, true);
 
         vm.prank(alice);
-        parimutuel.claim(marketId);
+        parimutuel.claim(marketId, address(0));
 
         // Try to claim again - should fail
         vm.prank(alice);
         vm.expectRevert("Already claimed");
-        parimutuel.claim(marketId);
+        parimutuel.claim(marketId, address(0));
     }
 
     function test_CannotBetAfterDeadline() public {
         vm.prank(creator);
-        uint256 marketId = parimutuel.createMarket(
-            "Test question",
-            block.timestamp + 1 days
-        );
+        uint256 marketId = parimutuel.createMarket("Test question", block.timestamp + 1 days);
 
         // Move past deadline
         vm.warp(block.timestamp + 1 days + 1);
@@ -205,10 +187,7 @@ contract ParimutuelBetV0Test is Test {
 
     function test_OnlyCreatorCanResolve() public {
         vm.prank(creator);
-        uint256 marketId = parimutuel.createMarket(
-            "Test question",
-            block.timestamp + 1 days
-        );
+        uint256 marketId = parimutuel.createMarket("Test question", block.timestamp + 1 days);
 
         vm.warp(block.timestamp + 1 days + 1);
 
