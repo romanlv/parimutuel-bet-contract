@@ -6,260 +6,260 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 contract ParimutuelBetV0 is ReentrancyGuard {
     string public constant VERSION = "0.6.0";
 
-    struct Market {
+    struct Bet {
         address creator;
         string question;
         uint256 deadline;
         uint256 createdAt;
-        uint256 yesPool;
-        uint256 noPool;
+        uint256 yesTotal;
+        uint256 noTotal;
         bool resolved;
         bool outcome;
     }
 
     // Structs for return values (frontend-friendly)
-    struct PaginatedMarketIds {
+    struct PaginatedBetIds {
         uint256[] ids;
         bool hasMore;
     }
 
     struct UserPosition {
-        uint256[] marketIds;
+        uint256[] betIds;
         uint256[] amounts;
     }
 
-    struct MarketStats {
-        uint256 totalPool;
-        uint256 yesPoolUnclaimed;
-        uint256 noPoolUnclaimed;
+    struct BetStats {
+        uint256 totalAmount;
+        uint256 yesAmountLeft;
+        uint256 noAmountLeft;
         uint256 totalClaimed;
         uint256 totalRefunded;
     }
 
-    struct MarketWithUserData {
-        Market market;
-        uint256 userYesBet;
-        uint256 userNoBet;
+    struct BetWithUserData {
+        Bet bet;
+        uint256 userYesPosition;
+        uint256 userNoPosition;
         uint256 potentialPayoutYes;
         uint256 potentialPayoutNo;
         bool userCanClaim;
         bool userHasClaimed;
     }
 
-    mapping(uint256 => Market) public markets;
-    mapping(uint256 => mapping(address => uint256)) public yesBets;
-    mapping(uint256 => mapping(address => uint256)) public noBets;
+    mapping(uint256 => Bet) public bets;
+    mapping(uint256 => mapping(address => uint256)) public yesPositions;
+    mapping(uint256 => mapping(address => uint256)) public noPositions;
     mapping(uint256 => mapping(address => bool)) public hasClaimed;
     mapping(uint256 => mapping(address => bool)) public hasRefunded;
 
     // Track total claimed/refunded amounts for accurate payout calculations
-    mapping(uint256 => uint256) public yesPoolClaimed;
-    mapping(uint256 => uint256) public noPoolClaimed;
-    mapping(uint256 => uint256) public yesPoolRefunded;
-    mapping(uint256 => uint256) public noPoolRefunded;
+    mapping(uint256 => uint256) public yesTotalClaimed;
+    mapping(uint256 => uint256) public noTotalClaimed;
+    mapping(uint256 => uint256) public yesTotalRefunded;
+    mapping(uint256 => uint256) public noTotalRefunded;
 
-    uint256 public nextMarketId;
+    uint256 public nextBetId;
     uint256 public constant REFUND_PERIOD = 7 days;
 
-    // Market tracking for efficient queries
-    uint256[] private allMarketIds;
-    mapping(address => uint256[]) private userMarketIds;
-    mapping(address => uint256[]) private creatorMarketIds;
+    // Bet tracking for efficient queries
+    uint256[] private allBetIds;
+    mapping(address => uint256[]) private userBetIds;
+    mapping(address => uint256[]) private creatorBetIds;
 
-    event MarketCreated(uint256 indexed marketId, address indexed creator, string question, uint256 deadline);
-    event BetPlaced(
-        uint256 indexed marketId, address indexed bettor, bool betYes, uint256 amount, uint256 yesPool, uint256 noPool
+    event BetCreated(uint256 indexed betId, address indexed creator, string question, uint256 deadline);
+    event PositionTaken(
+        uint256 indexed betId, address indexed user, bool isYes, uint256 amount, uint256 yesTotal, uint256 noTotal
     );
-    event MarketResolved(uint256 indexed marketId, bool outcome, uint256 yesPool, uint256 noPool);
-    event Claimed(uint256 indexed marketId, address indexed claimer, uint256 amount, address indexed triggeredBy);
-    event Refunded(uint256 indexed marketId, address indexed refundee, uint256 amount, address indexed triggeredBy);
+    event BetResolved(uint256 indexed betId, bool outcome, uint256 yesTotal, uint256 noTotal);
+    event Claimed(uint256 indexed betId, address indexed user, uint256 amount, address indexed triggeredBy);
+    event Refunded(uint256 indexed betId, address indexed user, uint256 amount, address indexed triggeredBy);
 
-    function createMarket(string memory question, uint256 deadline) external returns (uint256) {
+    function createBet(string memory question, uint256 deadline) external returns (uint256) {
         require(deadline > block.timestamp, "Deadline must be in future");
 
-        uint256 marketId = nextMarketId++;
-        markets[marketId] = Market({
+        uint256 betId = nextBetId++;
+        bets[betId] = Bet({
             creator: msg.sender,
             question: question,
             deadline: deadline,
             createdAt: block.timestamp,
-            yesPool: 0,
-            noPool: 0,
+            yesTotal: 0,
+            noTotal: 0,
             resolved: false,
             outcome: false
         });
 
-        // Track market for queries
-        allMarketIds.push(marketId);
-        creatorMarketIds[msg.sender].push(marketId);
+        // Track bet for queries
+        allBetIds.push(betId);
+        creatorBetIds[msg.sender].push(betId);
 
-        emit MarketCreated(marketId, msg.sender, question, deadline);
-        return marketId;
+        emit BetCreated(betId, msg.sender, question, deadline);
+        return betId;
     }
 
-    function placeBet(uint256 marketId, bool betYes) external payable {
-        require(msg.value > 0, "Bet amount must be greater than 0");
-        require(markets[marketId].creator != address(0), "Market does not exist");
-        require(block.timestamp < markets[marketId].deadline, "Betting period has ended");
-        require(!markets[marketId].resolved, "Market already resolved");
+    function takePosition(uint256 betId, bool isYes) external payable {
+        require(msg.value > 0, "Amount must be greater than 0");
+        require(bets[betId].creator != address(0), "Bet does not exist");
+        require(block.timestamp < bets[betId].deadline, "Betting period has ended");
+        require(!bets[betId].resolved, "Bet already resolved");
 
-        // Track user's first bet on this market
-        if (yesBets[marketId][msg.sender] == 0 && noBets[marketId][msg.sender] == 0) {
-            userMarketIds[msg.sender].push(marketId);
+        // Track user's first position on this bet
+        if (yesPositions[betId][msg.sender] == 0 && noPositions[betId][msg.sender] == 0) {
+            userBetIds[msg.sender].push(betId);
         }
 
-        if (betYes) {
-            yesBets[marketId][msg.sender] += msg.value;
-            markets[marketId].yesPool += msg.value;
+        if (isYes) {
+            yesPositions[betId][msg.sender] += msg.value;
+            bets[betId].yesTotal += msg.value;
         } else {
-            noBets[marketId][msg.sender] += msg.value;
-            markets[marketId].noPool += msg.value;
+            noPositions[betId][msg.sender] += msg.value;
+            bets[betId].noTotal += msg.value;
         }
 
-        emit BetPlaced(marketId, msg.sender, betYes, msg.value, markets[marketId].yesPool, markets[marketId].noPool);
+        emit PositionTaken(betId, msg.sender, isYes, msg.value, bets[betId].yesTotal, bets[betId].noTotal);
     }
 
-    function resolve(uint256 marketId, bool outcome) external {
-        require(markets[marketId].creator != address(0), "Market does not exist");
-        require(msg.sender == markets[marketId].creator, "Only creator can resolve");
-        require(block.timestamp > markets[marketId].deadline, "Cannot resolve before deadline");
-        require(!markets[marketId].resolved, "Market already resolved");
+    function resolve(uint256 betId, bool outcome) external {
+        require(bets[betId].creator != address(0), "Bet does not exist");
+        require(msg.sender == bets[betId].creator, "Only creator can resolve");
+        require(block.timestamp > bets[betId].deadline, "Cannot resolve before deadline");
+        require(!bets[betId].resolved, "Bet already resolved");
         require(
-            yesPoolRefunded[marketId] == 0 && noPoolRefunded[marketId] == 0,
+            yesTotalRefunded[betId] == 0 && noTotalRefunded[betId] == 0,
             "Cannot resolve after refunds have been claimed"
         );
 
-        markets[marketId].resolved = true;
-        markets[marketId].outcome = outcome;
+        bets[betId].resolved = true;
+        bets[betId].outcome = outcome;
 
-        emit MarketResolved(marketId, outcome, markets[marketId].yesPool, markets[marketId].noPool);
+        emit BetResolved(betId, outcome, bets[betId].yesTotal, bets[betId].noTotal);
     }
 
     /**
      * @dev Internal function to calculate payout for a user based on outcome
-     * @param marketId The market ID
+     * @param betId The bet ID
      * @param user Address of the user
      * @param outcome The outcome to calculate payout for (true = YES, false = NO)
      * @return payout The calculated payout amount
      */
-    function _calculatePayout(uint256 marketId, address user, bool outcome) internal view returns (uint256) {
-        Market memory market = markets[marketId];
-        uint256 totalPot = market.yesPool + market.noPool;
+    function _calculatePayout(uint256 betId, address user, bool outcome) internal view returns (uint256) {
+        Bet memory bet = bets[betId];
+        uint256 totalAmount = bet.yesTotal + bet.noTotal;
 
-        if (totalPot == 0) {
+        if (totalAmount == 0) {
             return 0;
         }
 
         if (outcome) {
-            uint256 userYesBet = yesBets[marketId][user];
-            if (userYesBet == 0) {
+            uint256 userYesPosition = yesPositions[betId][user];
+            if (userYesPosition == 0) {
                 return 0;
             }
-            if (market.yesPool == 0) {
-                return userYesBet;
+            if (bet.yesTotal == 0) {
+                return userYesPosition;
             }
-            return (userYesBet * totalPot) / market.yesPool;
+            return (userYesPosition * totalAmount) / bet.yesTotal;
         } else {
-            uint256 userNoBet = noBets[marketId][user];
-            if (userNoBet == 0) {
+            uint256 userNoPosition = noPositions[betId][user];
+            if (userNoPosition == 0) {
                 return 0;
             }
-            if (market.noPool == 0) {
-                return userNoBet;
+            if (bet.noTotal == 0) {
+                return userNoPosition;
             }
-            return (userNoBet * totalPot) / market.noPool;
+            return (userNoPosition * totalAmount) / bet.noTotal;
         }
     }
 
-    function claim(uint256 marketId, address user) external nonReentrant {
+    function claim(uint256 betId, address user) external nonReentrant {
         // Default to msg.sender if user is address(0)
         address beneficiary = user == address(0) ? msg.sender : user;
 
-        require(markets[marketId].resolved, "Market not resolved");
-        require(!hasClaimed[marketId][beneficiary], "Already claimed");
+        require(bets[betId].resolved, "Bet not resolved");
+        require(!hasClaimed[betId][beneficiary], "Already claimed");
 
-        uint256 payout = _calculatePayout(marketId, beneficiary, markets[marketId].outcome);
-        require(payout > 0, "No winning bet to claim");
+        uint256 payout = _calculatePayout(betId, beneficiary, bets[betId].outcome);
+        require(payout > 0, "No winning position to claim");
 
         // Mark as claimed (prevent reentrancy)
-        hasClaimed[marketId][beneficiary] = true;
+        hasClaimed[betId][beneficiary] = true;
 
         // Track claimed amounts for accurate remaining payout calculations
-        if (markets[marketId].outcome) {
-            yesPoolClaimed[marketId] += yesBets[marketId][beneficiary];
+        if (bets[betId].outcome) {
+            yesTotalClaimed[betId] += yesPositions[betId][beneficiary];
         } else {
-            noPoolClaimed[marketId] += noBets[marketId][beneficiary];
+            noTotalClaimed[betId] += noPositions[betId][beneficiary];
         }
 
         // Send payout to beneficiary
         (bool success,) = payable(beneficiary).call{value: payout}("");
         require(success, "ETH transfer failed");
-        emit Claimed(marketId, beneficiary, payout, msg.sender);
+        emit Claimed(betId, beneficiary, payout, msg.sender);
     }
 
-    function refund(uint256 marketId, address user) external nonReentrant {
+    function refund(uint256 betId, address user) external nonReentrant {
         // Default to msg.sender if user is address(0)
         address beneficiary = user == address(0) ? msg.sender : user;
 
-        require(markets[marketId].creator != address(0), "Market does not exist");
-        require(!markets[marketId].resolved, "Market already resolved");
-        require(block.timestamp > markets[marketId].deadline + REFUND_PERIOD, "Refund period not reached");
-        require(!hasRefunded[marketId][beneficiary], "Already refunded");
+        require(bets[betId].creator != address(0), "Bet does not exist");
+        require(!bets[betId].resolved, "Bet already resolved");
+        require(block.timestamp > bets[betId].deadline + REFUND_PERIOD, "Refund period not reached");
+        require(!hasRefunded[betId][beneficiary], "Already refunded");
 
-        uint256 userYesBet = yesBets[marketId][beneficiary];
-        uint256 userNoBet = noBets[marketId][beneficiary];
-        uint256 totalRefund = userYesBet + userNoBet;
+        uint256 userYesPosition = yesPositions[betId][beneficiary];
+        uint256 userNoPosition = noPositions[betId][beneficiary];
+        uint256 totalRefund = userYesPosition + userNoPosition;
 
-        require(totalRefund > 0, "No bets to refund");
+        require(totalRefund > 0, "No positions to refund");
 
         // Mark as refunded to prevent double refunds
-        hasRefunded[marketId][beneficiary] = true;
+        hasRefunded[betId][beneficiary] = true;
 
-        // Track refunded amounts for accurate pool calculations
-        yesPoolRefunded[marketId] += userYesBet;
-        noPoolRefunded[marketId] += userNoBet;
+        // Track refunded amounts for accurate calculations
+        yesTotalRefunded[betId] += userYesPosition;
+        noTotalRefunded[betId] += userNoPosition;
 
         // Send refund to beneficiary
         (bool success,) = payable(beneficiary).call{value: totalRefund}("");
         require(success, "ETH transfer failed");
-        emit Refunded(marketId, beneficiary, totalRefund, msg.sender);
+        emit Refunded(betId, beneficiary, totalRefund, msg.sender);
     }
 
     // ============================================
-    // QUERY FUNCTIONS FOR MARKET DISCOVERY
+    // QUERY FUNCTIONS FOR BET DISCOVERY
     // ============================================
 
     /**
-     * @notice Get total number of markets created
-     * @return Total count of all markets
+     * @notice Get total number of bets created
+     * @return Total count of all bets
      */
-    function getTotalMarketsCount() external view returns (uint256) {
-        return allMarketIds.length;
+    function getTotalBetsCount() external view returns (uint256) {
+        return allBetIds.length;
     }
 
     /**
-     * @notice Get paginated list of markets open for betting (not resolved, before deadline)
-     * @dev This is the main function for home page market browsing
-     * @param offset Starting index in the markets array
-     * @param limit Maximum number of markets to return
-     * @return result PaginatedMarketIds struct with ids array and hasMore flag
+     * @notice Get paginated list of bets open for positions (not resolved, before deadline)
+     * @dev This is the main function for home page bet browsing
+     * @param offset Starting index in the bets array
+     * @param limit Maximum number of bets to return
+     * @return result PaginatedBetIds struct with ids array and hasMore flag
      */
-    function getOpenMarketIds(uint256 offset, uint256 limit) external view returns (PaginatedMarketIds memory result) {
-        uint256 totalMarkets = allMarketIds.length;
-        if (offset >= totalMarkets) {
-            return PaginatedMarketIds({ids: new uint256[](0), hasMore: false});
+    function getOpenBetIds(uint256 offset, uint256 limit) external view returns (PaginatedBetIds memory result) {
+        uint256 totalBets = allBetIds.length;
+        if (offset >= totalBets) {
+            return PaginatedBetIds({ids: new uint256[](0), hasMore: false});
         }
 
         // Single-pass: collect up to limit+1 results to detect hasMore
         uint256[] memory tempIds = new uint256[](limit + 1);
         uint256 count = 0;
 
-        for (uint256 i = offset; i < totalMarkets && count <= limit; i++) {
-            uint256 marketId = allMarketIds[i];
-            Market storage market = markets[marketId];
+        for (uint256 i = offset; i < totalBets && count <= limit; i++) {
+            uint256 betId = allBetIds[i];
+            Bet storage bet = bets[betId];
 
-            if (!market.resolved && block.timestamp < market.deadline) {
-                tempIds[count] = marketId;
+            if (!bet.resolved && block.timestamp < bet.deadline) {
+                tempIds[count] = betId;
                 count++;
             }
         }
@@ -274,35 +274,35 @@ contract ParimutuelBetV0 is ReentrancyGuard {
             ids[i] = tempIds[i];
         }
 
-        return PaginatedMarketIds({ids: ids, hasMore: hasMore});
+        return PaginatedBetIds({ids: ids, hasMore: hasMore});
     }
 
     /**
-     * @notice Get paginated list of markets awaiting resolution (past deadline, not resolved)
-     * @param offset Starting index in the markets array
-     * @param limit Maximum number of markets to return
-     * @return result PaginatedMarketIds struct with ids array and hasMore flag
+     * @notice Get paginated list of bets awaiting resolution (past deadline, not resolved)
+     * @param offset Starting index in the bets array
+     * @param limit Maximum number of bets to return
+     * @return result PaginatedBetIds struct with ids array and hasMore flag
      */
     function getAwaitingResolutionIds(uint256 offset, uint256 limit)
         external
         view
-        returns (PaginatedMarketIds memory result)
+        returns (PaginatedBetIds memory result)
     {
-        uint256 totalMarkets = allMarketIds.length;
-        if (offset >= totalMarkets) {
-            return PaginatedMarketIds({ids: new uint256[](0), hasMore: false});
+        uint256 totalBets = allBetIds.length;
+        if (offset >= totalBets) {
+            return PaginatedBetIds({ids: new uint256[](0), hasMore: false});
         }
 
         // Single-pass: collect up to limit+1 results to detect hasMore
         uint256[] memory tempIds = new uint256[](limit + 1);
         uint256 count = 0;
 
-        for (uint256 i = offset; i < totalMarkets && count <= limit; i++) {
-            uint256 marketId = allMarketIds[i];
-            Market storage market = markets[marketId];
+        for (uint256 i = offset; i < totalBets && count <= limit; i++) {
+            uint256 betId = allBetIds[i];
+            Bet storage bet = bets[betId];
 
-            if (!market.resolved && block.timestamp >= market.deadline) {
-                tempIds[count] = marketId;
+            if (!bet.resolved && block.timestamp >= bet.deadline) {
+                tempIds[count] = betId;
                 count++;
             }
         }
@@ -317,33 +317,33 @@ contract ParimutuelBetV0 is ReentrancyGuard {
             ids[i] = tempIds[i];
         }
 
-        return PaginatedMarketIds({ids: ids, hasMore: hasMore});
+        return PaginatedBetIds({ids: ids, hasMore: hasMore});
     }
 
     /**
-     * @notice Get paginated list of resolved market IDs
-     * @param offset Starting index in the markets array
-     * @param limit Maximum number of markets to return
-     * @return result PaginatedMarketIds struct with ids array and hasMore flag
+     * @notice Get paginated list of resolved bet IDs
+     * @param offset Starting index in the bets array
+     * @param limit Maximum number of bets to return
+     * @return result PaginatedBetIds struct with ids array and hasMore flag
      */
-    function getResolvedMarketIds(uint256 offset, uint256 limit)
+    function getResolvedBetIds(uint256 offset, uint256 limit)
         external
         view
-        returns (PaginatedMarketIds memory result)
+        returns (PaginatedBetIds memory result)
     {
-        uint256 totalMarkets = allMarketIds.length;
-        if (offset >= totalMarkets) {
-            return PaginatedMarketIds({ids: new uint256[](0), hasMore: false});
+        uint256 totalBets = allBetIds.length;
+        if (offset >= totalBets) {
+            return PaginatedBetIds({ids: new uint256[](0), hasMore: false});
         }
 
         // Single-pass: collect up to limit+1 results to detect hasMore
         uint256[] memory tempIds = new uint256[](limit + 1);
         uint256 count = 0;
 
-        for (uint256 i = offset; i < totalMarkets && count <= limit; i++) {
-            uint256 marketId = allMarketIds[i];
-            if (markets[marketId].resolved) {
-                tempIds[count] = marketId;
+        for (uint256 i = offset; i < totalBets && count <= limit; i++) {
+            uint256 betId = allBetIds[i];
+            if (bets[betId].resolved) {
+                tempIds[count] = betId;
                 count++;
             }
         }
@@ -358,20 +358,20 @@ contract ParimutuelBetV0 is ReentrancyGuard {
             ids[i] = tempIds[i];
         }
 
-        return PaginatedMarketIds({ids: ids, hasMore: hasMore});
+        return PaginatedBetIds({ids: ids, hasMore: hasMore});
     }
 
     /**
-     * @notice Batch fetch market details for multiple market IDs
-     * @param marketIds Array of market IDs to fetch
-     * @return marketsData Array of Market structs
+     * @notice Batch fetch bet details for multiple bet IDs
+     * @param betIds Array of bet IDs to fetch
+     * @return betsData Array of Bet structs
      */
-    function getMarkets(uint256[] calldata marketIds) external view returns (Market[] memory marketsData) {
-        marketsData = new Market[](marketIds.length);
-        for (uint256 i = 0; i < marketIds.length; i++) {
-            marketsData[i] = markets[marketIds[i]];
+    function getBets(uint256[] calldata betIds) external view returns (Bet[] memory betsData) {
+        betsData = new Bet[](betIds.length);
+        for (uint256 i = 0; i < betIds.length; i++) {
+            betsData[i] = bets[betIds[i]];
         }
-        return marketsData;
+        return betsData;
     }
 
     // ============================================
@@ -379,46 +379,46 @@ contract ParimutuelBetV0 is ReentrancyGuard {
     // ============================================
 
     /**
-     * @notice Batch fetch user bets for multiple markets
-     * @param marketIds Array of market IDs to query
+     * @notice Batch fetch user positions for multiple bets
+     * @param betIds Array of bet IDs to query
      * @param user Address of the user
-     * @return yesBetsArray Array of YES bet amounts for each market
-     * @return noBetsArray Array of NO bet amounts for each market
+     * @return yesPositionsArray Array of YES position amounts for each bet
+     * @return noPositionsArray Array of NO position amounts for each bet
      */
-    function getUserBetsForMarkets(uint256[] calldata marketIds, address user)
+    function getUserPositions(uint256[] calldata betIds, address user)
         external
         view
-        returns (uint256[] memory yesBetsArray, uint256[] memory noBetsArray)
+        returns (uint256[] memory yesPositionsArray, uint256[] memory noPositionsArray)
     {
-        yesBetsArray = new uint256[](marketIds.length);
-        noBetsArray = new uint256[](marketIds.length);
+        yesPositionsArray = new uint256[](betIds.length);
+        noPositionsArray = new uint256[](betIds.length);
 
-        for (uint256 i = 0; i < marketIds.length; i++) {
-            yesBetsArray[i] = yesBets[marketIds[i]][user];
-            noBetsArray[i] = noBets[marketIds[i]][user];
+        for (uint256 i = 0; i < betIds.length; i++) {
+            yesPositionsArray[i] = yesPositions[betIds[i]][user];
+            noPositionsArray[i] = noPositions[betIds[i]][user];
         }
 
-        return (yesBetsArray, noBetsArray);
+        return (yesPositionsArray, noPositionsArray);
     }
 
     /**
-     * @notice Get markets where user can claim winnings
+     * @notice Get bets where user can claim winnings
      * @param user Address to query
-     * @return result UserPosition struct with marketIds and amounts arrays
+     * @return result UserPosition struct with betIds and amounts arrays
      */
     function getUserClaimable(address user) external view returns (UserPosition memory result) {
-        uint256[] memory userMarkets = userMarketIds[user];
-        uint256[] memory tempIds = new uint256[](userMarkets.length);
-        uint256[] memory tempAmounts = new uint256[](userMarkets.length);
+        uint256[] memory userBets = userBetIds[user];
+        uint256[] memory tempIds = new uint256[](userBets.length);
+        uint256[] memory tempAmounts = new uint256[](userBets.length);
         uint256 count = 0;
 
-        // Single pass: collect claimable markets
-        for (uint256 i = 0; i < userMarkets.length; i++) {
-            uint256 marketId = userMarkets[i];
-            if (markets[marketId].resolved && !hasClaimed[marketId][user]) {
-                uint256 payout = _calculatePayout(marketId, user, markets[marketId].outcome);
+        // Single pass: collect claimable bets
+        for (uint256 i = 0; i < userBets.length; i++) {
+            uint256 betId = userBets[i];
+            if (bets[betId].resolved && !hasClaimed[betId][user]) {
+                uint256 payout = _calculatePayout(betId, user, bets[betId].outcome);
                 if (payout > 0) {
-                    tempIds[count] = marketId;
+                    tempIds[count] = betId;
                     tempAmounts[count] = payout;
                     count++;
                 }
@@ -426,37 +426,37 @@ contract ParimutuelBetV0 is ReentrancyGuard {
         }
 
         // Copy to correctly sized arrays
-        uint256[] memory marketIds = new uint256[](count);
+        uint256[] memory betIds = new uint256[](count);
         uint256[] memory amounts = new uint256[](count);
         for (uint256 i = 0; i < count; i++) {
-            marketIds[i] = tempIds[i];
+            betIds[i] = tempIds[i];
             amounts[i] = tempAmounts[i];
         }
 
-        return UserPosition({marketIds: marketIds, amounts: amounts});
+        return UserPosition({betIds: betIds, amounts: amounts});
     }
 
     /**
-     * @notice Get markets where user can get refunds
+     * @notice Get bets where user can get refunds
      * @param user Address to query
-     * @return result UserPosition struct with marketIds and amounts arrays
+     * @return result UserPosition struct with betIds and amounts arrays
      */
     function getUserRefundable(address user) external view returns (UserPosition memory result) {
-        uint256[] memory userMarkets = userMarketIds[user];
-        uint256[] memory tempIds = new uint256[](userMarkets.length);
-        uint256[] memory tempAmounts = new uint256[](userMarkets.length);
+        uint256[] memory userBets = userBetIds[user];
+        uint256[] memory tempIds = new uint256[](userBets.length);
+        uint256[] memory tempAmounts = new uint256[](userBets.length);
         uint256 count = 0;
 
-        // Single pass: collect refundable markets
-        for (uint256 i = 0; i < userMarkets.length; i++) {
-            uint256 marketId = userMarkets[i];
+        // Single pass: collect refundable bets
+        for (uint256 i = 0; i < userBets.length; i++) {
+            uint256 betId = userBets[i];
             if (
-                markets[marketId].creator != address(0) && !markets[marketId].resolved
-                    && block.timestamp > markets[marketId].deadline + REFUND_PERIOD && !hasRefunded[marketId][user]
+                bets[betId].creator != address(0) && !bets[betId].resolved
+                    && block.timestamp > bets[betId].deadline + REFUND_PERIOD && !hasRefunded[betId][user]
             ) {
-                uint256 totalRefund = yesBets[marketId][user] + noBets[marketId][user];
+                uint256 totalRefund = yesPositions[betId][user] + noPositions[betId][user];
                 if (totalRefund > 0) {
-                    tempIds[count] = marketId;
+                    tempIds[count] = betId;
                     tempAmounts[count] = totalRefund;
                     count++;
                 }
@@ -464,14 +464,14 @@ contract ParimutuelBetV0 is ReentrancyGuard {
         }
 
         // Copy to correctly sized arrays
-        uint256[] memory marketIds = new uint256[](count);
+        uint256[] memory betIds = new uint256[](count);
         uint256[] memory amounts = new uint256[](count);
         for (uint256 i = 0; i < count; i++) {
-            marketIds[i] = tempIds[i];
+            betIds[i] = tempIds[i];
             amounts[i] = tempAmounts[i];
         }
 
-        return UserPosition({marketIds: marketIds, amounts: amounts});
+        return UserPosition({betIds: betIds, amounts: amounts});
     }
 
     // ============================================
@@ -479,27 +479,27 @@ contract ParimutuelBetV0 is ReentrancyGuard {
     // ============================================
 
     /**
-     * @notice Get all market IDs created by a specific creator
+     * @notice Get all bet IDs created by a specific creator
      * @param creator Address of the creator
-     * @return Array of market IDs created by this address
+     * @return Array of bet IDs created by this address
      */
-    function getCreatorMarkets(address creator) external view returns (uint256[] memory) {
-        return creatorMarketIds[creator];
+    function getCreatorBets(address creator) external view returns (uint256[] memory) {
+        return creatorBetIds[creator];
     }
 
     /**
-     * @notice Get markets created by address that need resolution
+     * @notice Get bets created by address that need resolution
      * @param creator Address of the creator
-     * @return Array of market IDs that are past deadline but not yet resolved
+     * @return Array of bet IDs that are past deadline but not yet resolved
      */
     function getCreatorPendingResolution(address creator) external view returns (uint256[] memory) {
-        uint256[] memory creatorMarkets = creatorMarketIds[creator];
+        uint256[] memory creatorBets = creatorBetIds[creator];
         uint256 count = 0;
 
-        // Count markets that need resolution
-        for (uint256 i = 0; i < creatorMarkets.length; i++) {
-            uint256 marketId = creatorMarkets[i];
-            if (!markets[marketId].resolved && block.timestamp > markets[marketId].deadline) {
+        // Count bets that need resolution
+        for (uint256 i = 0; i < creatorBets.length; i++) {
+            uint256 betId = creatorBets[i];
+            if (!bets[betId].resolved && block.timestamp > bets[betId].deadline) {
                 count++;
             }
         }
@@ -507,10 +507,10 @@ contract ParimutuelBetV0 is ReentrancyGuard {
         // Build result array
         uint256[] memory result = new uint256[](count);
         uint256 index = 0;
-        for (uint256 i = 0; i < creatorMarkets.length; i++) {
-            uint256 marketId = creatorMarkets[i];
-            if (!markets[marketId].resolved && block.timestamp > markets[marketId].deadline) {
-                result[index] = marketId;
+        for (uint256 i = 0; i < creatorBets.length; i++) {
+            uint256 betId = creatorBets[i];
+            if (!bets[betId].resolved && block.timestamp > bets[betId].deadline) {
+                result[index] = betId;
                 index++;
             }
         }
@@ -523,45 +523,45 @@ contract ParimutuelBetV0 is ReentrancyGuard {
     // ============================================
 
     /**
-     * @notice Get comprehensive statistics for a market
-     * @param marketId The market ID to query
-     * @return stats MarketStats struct with pool and claim/refund information
+     * @notice Get comprehensive statistics for a bet
+     * @param betId The bet ID to query
+     * @return stats BetStats struct with totals and claim/refund information
      */
-    function getMarketStats(uint256 marketId) external view returns (MarketStats memory stats) {
-        Market storage market = markets[marketId];
+    function getBetStats(uint256 betId) external view returns (BetStats memory stats) {
+        Bet storage bet = bets[betId];
 
-        stats.totalPool = market.yesPool + market.noPool;
-        stats.yesPoolUnclaimed = market.yesPool - yesPoolClaimed[marketId] - yesPoolRefunded[marketId];
-        stats.noPoolUnclaimed = market.noPool - noPoolClaimed[marketId] - noPoolRefunded[marketId];
-        stats.totalClaimed = yesPoolClaimed[marketId] + noPoolClaimed[marketId];
-        stats.totalRefunded = yesPoolRefunded[marketId] + noPoolRefunded[marketId];
+        stats.totalAmount = bet.yesTotal + bet.noTotal;
+        stats.yesAmountLeft = bet.yesTotal - yesTotalClaimed[betId] - yesTotalRefunded[betId];
+        stats.noAmountLeft = bet.noTotal - noTotalClaimed[betId] - noTotalRefunded[betId];
+        stats.totalClaimed = yesTotalClaimed[betId] + noTotalClaimed[betId];
+        stats.totalRefunded = yesTotalRefunded[betId] + noTotalRefunded[betId];
 
         return stats;
     }
 
     /**
-     * @notice Get comprehensive market data along with user-specific information
-     * @param marketId The market ID to query
+     * @notice Get comprehensive bet data along with user-specific information
+     * @param betId The bet ID to query
      * @param user Address of the user
-     * @return data MarketWithUserData struct containing all market and user information
+     * @return data BetWithUserData struct containing all bet and user information
      */
-    function getMarketWithUserData(uint256 marketId, address user)
+    function getBetWithUserData(uint256 betId, address user)
         external
         view
-        returns (MarketWithUserData memory data)
+        returns (BetWithUserData memory data)
     {
-        data.market = markets[marketId];
-        data.userYesBet = yesBets[marketId][user];
-        data.userNoBet = noBets[marketId][user];
-        data.userHasClaimed = hasClaimed[marketId][user];
+        data.bet = bets[betId];
+        data.userYesPosition = yesPositions[betId][user];
+        data.userNoPosition = noPositions[betId][user];
+        data.userHasClaimed = hasClaimed[betId][user];
 
         // Calculate potential payouts for both outcomes using helper
-        data.potentialPayoutYes = _calculatePayout(marketId, user, true);
-        data.potentialPayoutNo = _calculatePayout(marketId, user, false);
+        data.potentialPayoutYes = _calculatePayout(betId, user, true);
+        data.potentialPayoutNo = _calculatePayout(betId, user, false);
 
         // Check if user can currently claim
-        if (data.market.resolved && !data.userHasClaimed) {
-            uint256 actualPayout = data.market.outcome ? data.potentialPayoutYes : data.potentialPayoutNo;
+        if (data.bet.resolved && !data.userHasClaimed) {
+            uint256 actualPayout = data.bet.outcome ? data.potentialPayoutYes : data.potentialPayoutNo;
             data.userCanClaim = actualPayout > 0;
         }
 
