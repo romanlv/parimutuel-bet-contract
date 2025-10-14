@@ -8,6 +8,7 @@ contract ParimutuelBetV0 is ReentrancyGuard {
 
     struct Bet {
         address creator;
+        address resolver;
         string question;
         uint256 deadline;
         uint256 createdAt;
@@ -66,7 +67,7 @@ contract ParimutuelBetV0 is ReentrancyGuard {
     mapping(address => uint256[]) private userBetIds;
     mapping(address => uint256[]) private creatorBetIds;
 
-    event BetCreated(uint256 indexed betId, address indexed creator, string question, uint256 deadline);
+    event BetCreated(uint256 indexed betId, address indexed creator, address indexed resolver, string question, uint256 deadline);
     event PositionTaken(
         uint256 indexed betId, address indexed user, bool isYes, uint256 amount, uint256 yesTotal, uint256 noTotal
     );
@@ -74,12 +75,14 @@ contract ParimutuelBetV0 is ReentrancyGuard {
     event Claimed(uint256 indexed betId, address indexed user, uint256 amount, address indexed triggeredBy);
     event Refunded(uint256 indexed betId, address indexed user, uint256 amount, address indexed triggeredBy);
 
-    function createBet(string memory question, uint256 deadline) external returns (uint256) {
+    function createBet(string memory question, uint256 deadline, address resolver) external returns (uint256) {
         require(deadline > block.timestamp, "Deadline must be in future");
+        require(resolver != address(0), "Resolver cannot be zero address");
 
         uint256 betId = nextBetId++;
         bets[betId] = Bet({
             creator: msg.sender,
+            resolver: resolver,
             question: question,
             deadline: deadline,
             createdAt: block.timestamp,
@@ -93,7 +96,7 @@ contract ParimutuelBetV0 is ReentrancyGuard {
         allBetIds.push(betId);
         creatorBetIds[msg.sender].push(betId);
 
-        emit BetCreated(betId, msg.sender, question, deadline);
+        emit BetCreated(betId, msg.sender, resolver, question, deadline);
         return betId;
     }
 
@@ -121,7 +124,7 @@ contract ParimutuelBetV0 is ReentrancyGuard {
 
     function resolve(uint256 betId, bool outcome) external {
         require(bets[betId].creator != address(0), "Bet does not exist");
-        require(msg.sender == bets[betId].creator, "Only creator can resolve");
+        require(msg.sender == bets[betId].resolver, "Only resolver can resolve");
         require(block.timestamp > bets[betId].deadline, "Cannot resolve before deadline");
         require(!bets[betId].resolved, "Bet already resolved");
         require(

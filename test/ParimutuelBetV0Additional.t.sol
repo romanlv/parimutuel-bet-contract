@@ -25,7 +25,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     // Test refund functionality
     function test_RefundAfterDeadline() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         // Place bets
         vm.prank(alice);
@@ -54,7 +54,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
     function test_CannotRefundTwice() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 1 ether}(betId, true);
@@ -71,7 +71,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
     function test_RefundBeforeRefundPeriod() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 1 ether}(betId, true);
@@ -86,7 +86,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
     function test_RefundAfterResolution() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 1 ether}(betId, true);
@@ -107,7 +107,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     // Test single-sided betting scenarios
     function test_OnlyYesBets() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         // Only YES bets
         vm.prank(alice);
@@ -129,7 +129,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
     function test_OnlyNoBets() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         // Only NO bets
         vm.prank(alice);
@@ -153,19 +153,19 @@ contract ParimutuelBetV0AdditionalTest is Test {
     function test_CreateMarketWithPastDeadline() public {
         vm.prank(creator);
         vm.expectRevert("Deadline must be in future");
-        parimutuel.createBet("Test", block.timestamp - 1);
+        parimutuel.createBet("Test", block.timestamp - 1, creator);
     }
 
     function test_CreateMarketWithCurrentTimestamp() public {
         vm.prank(creator);
         vm.expectRevert("Deadline must be in future");
-        parimutuel.createBet("Test", block.timestamp);
+        parimutuel.createBet("Test", block.timestamp, creator);
     }
 
     // Test betting edge cases
     function test_ZeroBetReverts() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         vm.expectRevert("Amount must be greater than 0");
@@ -180,7 +180,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
     function test_BetAfterDeadlinePrecedesResolvedCheck() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 1 ether}(betId, true);
@@ -199,7 +199,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     // Test multiple bets by same user
     function test_MultipleBetsBySameUser() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         // Alice makes multiple YES bets
         vm.prank(alice);
@@ -221,7 +221,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     // Test resolution edge cases
     function test_ResolveBeforeDeadline() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(creator);
         vm.expectRevert("Cannot resolve before deadline");
@@ -230,7 +230,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
     function test_ResolveAlreadyResolvedMarket() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.warp(block.timestamp + 1 days + 1);
         vm.prank(creator);
@@ -251,7 +251,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     // Test claiming edge cases
     function test_ClaimUnresolvedMarket() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 1 ether}(betId, true);
@@ -263,7 +263,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
     function test_ClaimEmptyMarket() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         // No bets placed
         vm.warp(block.timestamp + 1 days + 1);
@@ -278,9 +278,9 @@ contract ParimutuelBetV0AdditionalTest is Test {
     // Test events
     function test_EventEmissions() public {
         vm.prank(creator);
-        vm.expectEmit(true, true, false, true);
-        emit BetCreated(0, creator, "Test", block.timestamp + 1 days);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        vm.expectEmit(true, true, true, true);
+        emit BetCreated(0, creator, creator, "Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         vm.expectEmit(true, true, false, true);
@@ -302,7 +302,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     // Pool accounting after refunds
     function test_PoolAccountingAfterRefund() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 2 ether}(betId, true);
@@ -337,7 +337,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     function test_GetUserRefundable() public {
         // Create market
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         // Place bets
         vm.prank(alice);
@@ -367,13 +367,13 @@ contract ParimutuelBetV0AdditionalTest is Test {
     function test_GetAwaitingResolutionIds() public {
         // Create multiple markets
         vm.prank(creator);
-        uint256 market1 = parimutuel.createBet("Market 1", block.timestamp + 1 days);
+        uint256 market1 = parimutuel.createBet("Market 1", block.timestamp + 1 days, creator);
 
         vm.prank(creator);
-        uint256 market2 = parimutuel.createBet("Market 2", block.timestamp + 2 days);
+        uint256 market2 = parimutuel.createBet("Market 2", block.timestamp + 2 days, creator);
 
         vm.prank(creator);
-        uint256 market3 = parimutuel.createBet("Market 3", block.timestamp + 3 days);
+        uint256 market3 = parimutuel.createBet("Market 3", block.timestamp + 3 days, creator);
 
         // Move past first deadline
         vm.warp(block.timestamp + 1 days + 1);
@@ -405,7 +405,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         uint256 creationTime = block.timestamp;
 
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         ParimutuelBetV0.BetWithUserData memory data = parimutuel.getBetWithUserData(betId, address(0));
         assertEq(data.bet.createdAt, creationTime);
@@ -415,7 +415,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         // Create 5 markets that will need resolution
         for (uint256 i = 0; i < 5; i++) {
             vm.prank(creator);
-            parimutuel.createBet(string(abi.encodePacked("Market ", i)), block.timestamp + 1 days);
+            parimutuel.createBet(string(abi.encodePacked("Market ", i)), block.timestamp + 1 days, creator);
         }
 
         // Move past deadline
@@ -444,7 +444,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     // Test that resolve fails after any refunds have been claimed
     function test_CannotResolveAfterRefunds() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 2 ether}(betId, true);
@@ -467,7 +467,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
     function test_CannotResolveAfterPartialRefunds() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 2 ether}(betId, true);
@@ -496,7 +496,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         vm.deal(address(receiver), INITIAL_BALANCE);
 
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         // Receiver contract places bet
         vm.prank(address(receiver));
@@ -519,7 +519,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         vm.deal(address(receiver), INITIAL_BALANCE);
 
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(address(receiver));
         parimutuel.takePosition{value: 1 ether}(betId, true);
@@ -534,7 +534,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     }
 
     // Events to match contract
-    event BetCreated(uint256 indexed betId, address indexed creator, string question, uint256 deadline);
+    event BetCreated(uint256 indexed betId, address indexed creator, address indexed resolver, string question, uint256 deadline);
     event PositionTaken(
         uint256 indexed betId, address indexed user, bool isYes, uint256 amount, uint256 yesTotal, uint256 noTotal
     );
@@ -549,7 +549,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     function test_ClaimForAnotherUser() public {
         // Setup market
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         // Alice bets
         vm.prank(alice);
@@ -573,7 +573,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     function test_ClaimForEmitsCorrectEvent() public {
         // Setup and resolve market
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 1 ether}(betId, true);
@@ -592,7 +592,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     function test_ClaimForSelfWithAddressZero() public {
         // Setup and resolve market
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 1 ether}(betId, true);
@@ -613,7 +613,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     function test_CannotClaimForSameUserTwice() public {
         // Setup and resolve market
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 1 ether}(betId, true);
@@ -640,7 +640,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     function test_RefundForAnotherUser() public {
         // Setup market
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         // Alice and Bob bet
         vm.prank(alice);
@@ -666,7 +666,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     function test_RefundForEmitsCorrectEvent() public {
         // Setup market
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 3 ether}(betId, true);
@@ -684,7 +684,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     function test_RefundForSelfWithAddressZero() public {
         // Setup market
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 2 ether}(betId, true);
@@ -704,7 +704,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     function test_CannotRefundForSameUserTwice() public {
         // Setup market
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 2 ether}(betId, true);
@@ -730,7 +730,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     function test_MultipleUsersCanClaimForDifferentBeneficiaries() public {
         // Setup market with multiple winners
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 2 ether}(betId, true);
@@ -758,6 +758,82 @@ contract ParimutuelBetV0AdditionalTest is Test {
         assertEq(bob.balance, bobBalanceBefore + 1 ether);
         assertTrue(parimutuel.hasClaimed(betId, alice));
         assertTrue(parimutuel.hasClaimed(betId, bob));
+    }
+
+    // ============================================
+    // RESOLVER TESTS
+    // ============================================
+
+    function test_ResolverCanResolve() public {
+        // Creator creates bet with Bob as resolver
+        vm.prank(creator);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, bob);
+
+        // Alice places bet
+        vm.prank(alice);
+        parimutuel.takePosition{value: 1 ether}(betId, true);
+
+        // Move past deadline
+        vm.warp(block.timestamp + 1 days + 1);
+
+        // Bob (resolver) can resolve
+        vm.prank(bob);
+        parimutuel.resolve(betId, true);
+
+        // Verify resolution
+        ParimutuelBetV0.BetWithUserData memory data = parimutuel.getBetWithUserData(betId, address(0));
+        assertTrue(data.bet.resolved);
+        assertTrue(data.bet.outcome);
+    }
+
+    function test_CreatorCannotResolveWhenSomeoneElseIsResolver() public {
+        // Creator creates bet with Bob as resolver
+        vm.prank(creator);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, bob);
+
+        // Alice places bet
+        vm.prank(alice);
+        parimutuel.takePosition{value: 1 ether}(betId, true);
+
+        // Move past deadline
+        vm.warp(block.timestamp + 1 days + 1);
+
+        // Creator tries to resolve but should fail
+        vm.prank(creator);
+        vm.expectRevert("Only resolver can resolve");
+        parimutuel.resolve(betId, true);
+    }
+
+    function test_NonResolverCannotResolve() public {
+        // Creator creates bet with Bob as resolver
+        vm.prank(creator);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, bob);
+
+        // Alice places bet
+        vm.prank(alice);
+        parimutuel.takePosition{value: 1 ether}(betId, true);
+
+        // Move past deadline
+        vm.warp(block.timestamp + 1 days + 1);
+
+        // Charlie (not resolver) tries to resolve but should fail
+        vm.prank(charlie);
+        vm.expectRevert("Only resolver can resolve");
+        parimutuel.resolve(betId, true);
+    }
+
+    function test_CannotCreateBetWithZeroResolver() public {
+        vm.prank(creator);
+        vm.expectRevert("Resolver cannot be zero address");
+        parimutuel.createBet("Test", block.timestamp + 1 days, address(0));
+    }
+
+    function test_BetCreatedEventIncludesResolver() public {
+        // Test that BetCreated event includes resolver parameter
+        vm.prank(creator);
+        vm.expectEmit(true, true, true, true);
+        emit BetCreated(0, creator, bob, "Test", block.timestamp + 1 days);
+        parimutuel.createBet("Test", block.timestamp + 1 days, bob);
     }
 }
 

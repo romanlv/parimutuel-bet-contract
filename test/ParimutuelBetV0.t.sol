@@ -27,7 +27,7 @@ contract ParimutuelBetV0Test is Test {
     function test_BasicBettingScenario() public {
         // Creator creates a bet
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Will it rain tomorrow?", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Will it rain tomorrow?", block.timestamp + 1 days, creator);
 
         // Alice takes position 2 ETH on YES
         vm.prank(alice);
@@ -103,7 +103,7 @@ contract ParimutuelBetV0Test is Test {
     function test_NOWinsScenario() public {
         // Creator creates a market
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Will it snow tomorrow?", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Will it snow tomorrow?", block.timestamp + 1 days, creator);
 
         // Alice bets 1 ETH on YES
         vm.prank(alice);
@@ -153,7 +153,7 @@ contract ParimutuelBetV0Test is Test {
     function test_DoubleClaimPrevention() public {
         // Setup market and bets
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test question", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test question", block.timestamp + 1 days, creator);
 
         vm.prank(alice);
         parimutuel.takePosition{value: 1 ether}(betId, true);
@@ -174,7 +174,7 @@ contract ParimutuelBetV0Test is Test {
 
     function test_CannotBetAfterDeadline() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test question", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test question", block.timestamp + 1 days, creator);
 
         // Move past deadline
         vm.warp(block.timestamp + 1 days + 1);
@@ -187,13 +187,13 @@ contract ParimutuelBetV0Test is Test {
 
     function test_OnlyCreatorCanResolve() public {
         vm.prank(creator);
-        uint256 betId = parimutuel.createBet("Test question", block.timestamp + 1 days);
+        uint256 betId = parimutuel.createBet("Test question", block.timestamp + 1 days, creator);
 
         vm.warp(block.timestamp + 1 days + 1);
 
         // Alice tries to resolve - should fail
         vm.prank(alice);
-        vm.expectRevert("Only creator can resolve");
+        vm.expectRevert("Only resolver can resolve");
         parimutuel.resolve(betId, true);
 
         // Creator can resolve - should succeed
