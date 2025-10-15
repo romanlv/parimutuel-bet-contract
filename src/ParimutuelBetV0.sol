@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract ParimutuelBetV0 is ReentrancyGuard {
-    string public constant VERSION = "0.7.1";
+    string public constant VERSION = "0.8.0";
 
     struct Bet {
         address creator;
@@ -24,11 +24,6 @@ contract ParimutuelBetV0 is ReentrancyGuard {
         bool hasMore;
     }
 
-    struct UserPosition {
-        uint256[] betIds;
-        uint256[] amounts;
-    }
-
     struct BetStats {
         uint256 totalAmount;
         uint256 yesAmountLeft;
@@ -45,6 +40,21 @@ contract ParimutuelBetV0 is ReentrancyGuard {
         uint256 potentialPayoutNo;
         bool userCanClaim;
         bool userHasClaimed;
+    }
+
+    enum PositionState {
+        ACTIVE,     // Bet is open, can still add to position
+        PENDING,    // Past deadline, awaiting resolution
+        CLAIMABLE,  // Can claim winnings
+        REFUNDABLE  // Can claim refund
+    }
+
+    struct UserPositionDetail {
+        uint256 betId;
+        uint256 yesAmount;
+        uint256 noAmount;
+        PositionState state;
+        uint256 withdrawableAmount; // Amount available to claim/refund (0 if not withdrawable)
     }
 
     mapping(uint256 => Bet) public bets;
@@ -395,99 +405,72 @@ contract ParimutuelBetV0 is ReentrancyGuard {
     // ============================================
 
     /**
-     * @notice Batch fetch user positions for multiple bets
-     * @param betIds Array of bet IDs to query
-     * @param user Address of the user
-     * @return yesPositionsArray Array of YES position amounts for each bet
-     * @return noPositionsArray Array of NO position amounts for each bet
-     */
-    function getUserPositions(uint256[] calldata betIds, address user)
-        external
-        view
-        returns (uint256[] memory yesPositionsArray, uint256[] memory noPositionsArray)
-    {
-        yesPositionsArray = new uint256[](betIds.length);
-        noPositionsArray = new uint256[](betIds.length);
-
-        for (uint256 i = 0; i < betIds.length; i++) {
-            yesPositionsArray[i] = yesPositions[betIds[i]][user];
-            noPositionsArray[i] = noPositions[betIds[i]][user];
-        }
-
-        return (yesPositionsArray, noPositionsArray);
-    }
-
-    /**
-     * @notice Get bets where user can claim winnings
+     * @notice Get all positions for a user with their current state and withdrawable amounts
+     * @dev This is the primary function for displaying a user's "My Positions" page
      * @param user Address to query
-     * @return result UserPosition struct with betIds and amounts arrays
+     * @return positions Array of UserPositionDetail structs containing all position information
      */
-    function getUserClaimable(address user) external view returns (UserPosition memory result) {
+    function getUserAllPositions(address user) external view returns (UserPositionDetail[] memory positions) {
         uint256[] memory userBets = userBetIds[user];
-        uint256[] memory tempIds = new uint256[](userBets.length);
-        uint256[] memory tempAmounts = new uint256[](userBets.length);
-        uint256 count = 0;
+        positions = new UserPositionDetail[](userBets.length);
 
-        // Single pass: collect claimable bets
         for (uint256 i = 0; i < userBets.length; i++) {
             uint256 betId = userBets[i];
-            if (bets[betId].resolved && !hasClaimed[betId][user]) {
-                uint256 payout = _calculatePayout(betId, user, bets[betId].outcome);
-                if (payout > 0) {
-                    tempIds[count] = betId;
-                    tempAmounts[count] = payout;
-                    count++;
+            Bet storage bet = bets[betId];
+
+            positions[i].betId = betId;
+            positions[i].yesAmount = yesPositions[betId][user];
+            positions[i].noAmount = noPositions[betId][user];
+
+            // Determine state and calculate withdrawable amount
+            if (bet.resolved) {
+                // Bet is resolved
+                if (!hasClaimed[betId][user]) {
+                    uint256 payout = _calculatePayout(betId, user, bet.outcome);
+                    if (payout > 0) {
+                        positions[i].state = PositionState.CLAIMABLE;
+                        positions[i].withdrawableAmount = payout;
+                    } else {
+                        // Resolved but user lost - treat as PENDING (no action available)
+                        positions[i].state = PositionState.PENDING;
+                        positions[i].withdrawableAmount = 0;
+                    }
+                } else {
+                    // Already claimed - treat as PENDING (no action available)
+                    positions[i].state = PositionState.PENDING;
+                    positions[i].withdrawableAmount = 0;
+                }
+            } else {
+                // Bet is not resolved
+                if (block.timestamp < bet.deadline) {
+                    // Before deadline - can still bet
+                    positions[i].state = PositionState.ACTIVE;
+                    positions[i].withdrawableAmount = 0;
+                } else if (block.timestamp <= bet.deadline + REFUND_PERIOD) {
+                    // After deadline but within refund period - awaiting resolution
+                    positions[i].state = PositionState.PENDING;
+                    positions[i].withdrawableAmount = 0;
+                } else {
+                    // After refund period - can claim refund
+                    if (!hasRefunded[betId][user]) {
+                        uint256 totalRefund = positions[i].yesAmount + positions[i].noAmount;
+                        if (totalRefund > 0) {
+                            positions[i].state = PositionState.REFUNDABLE;
+                            positions[i].withdrawableAmount = totalRefund;
+                        } else {
+                            positions[i].state = PositionState.PENDING;
+                            positions[i].withdrawableAmount = 0;
+                        }
+                    } else {
+                        // Already refunded
+                        positions[i].state = PositionState.PENDING;
+                        positions[i].withdrawableAmount = 0;
+                    }
                 }
             }
         }
 
-        // Copy to correctly sized arrays
-        uint256[] memory betIds = new uint256[](count);
-        uint256[] memory amounts = new uint256[](count);
-        for (uint256 i = 0; i < count; i++) {
-            betIds[i] = tempIds[i];
-            amounts[i] = tempAmounts[i];
-        }
-
-        return UserPosition({betIds: betIds, amounts: amounts});
-    }
-
-    /**
-     * @notice Get bets where user can get refunds
-     * @param user Address to query
-     * @return result UserPosition struct with betIds and amounts arrays
-     */
-    function getUserRefundable(address user) external view returns (UserPosition memory result) {
-        uint256[] memory userBets = userBetIds[user];
-        uint256[] memory tempIds = new uint256[](userBets.length);
-        uint256[] memory tempAmounts = new uint256[](userBets.length);
-        uint256 count = 0;
-
-        // Single pass: collect refundable bets
-        for (uint256 i = 0; i < userBets.length; i++) {
-            uint256 betId = userBets[i];
-            if (
-                bets[betId].creator != address(0) && !bets[betId].resolved
-                    && block.timestamp > bets[betId].deadline + REFUND_PERIOD && !hasRefunded[betId][user]
-            ) {
-                uint256 totalRefund = yesPositions[betId][user] + noPositions[betId][user];
-                if (totalRefund > 0) {
-                    tempIds[count] = betId;
-                    tempAmounts[count] = totalRefund;
-                    count++;
-                }
-            }
-        }
-
-        // Copy to correctly sized arrays
-        uint256[] memory betIds = new uint256[](count);
-        uint256[] memory amounts = new uint256[](count);
-        for (uint256 i = 0; i < count; i++) {
-            betIds[i] = tempIds[i];
-            amounts[i] = tempAmounts[i];
-        }
-
-        return UserPosition({betIds: betIds, amounts: amounts});
+        return positions;
     }
 
     // ============================================

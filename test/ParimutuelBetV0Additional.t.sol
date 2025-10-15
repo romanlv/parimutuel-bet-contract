@@ -334,7 +334,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     }
 
     // Test new query functions
-    function test_GetUserRefundable() public {
+    function test_GetUserAllPositions() public {
         // Create market
         vm.prank(creator);
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
@@ -346,22 +346,32 @@ contract ParimutuelBetV0AdditionalTest is Test {
         vm.prank(alice);
         parimutuel.takePosition{value: 1 ether}(betId, false, "");
 
+        // Check positions are ACTIVE before deadline
+        ParimutuelBetV0.UserPositionDetail[] memory positions = parimutuel.getUserAllPositions(alice);
+        assertEq(positions.length, 1);
+        assertEq(positions[0].betId, betId);
+        assertEq(positions[0].yesAmount, 2 ether);
+        assertEq(positions[0].noAmount, 1 ether);
+        assertEq(uint256(positions[0].state), uint256(ParimutuelBetV0.PositionState.ACTIVE));
+        assertEq(positions[0].withdrawableAmount, 0);
+
         // Move past deadline + refund period
         vm.warp(block.timestamp + 1 days + 7 days + 1);
 
-        // Check refundable
-        ParimutuelBetV0.UserPosition memory refundable = parimutuel.getUserRefundable(alice);
+        // Check positions are REFUNDABLE
+        positions = parimutuel.getUserAllPositions(alice);
+        assertEq(positions.length, 1);
+        assertEq(uint256(positions[0].state), uint256(ParimutuelBetV0.PositionState.REFUNDABLE));
+        assertEq(positions[0].withdrawableAmount, 3 ether); // 2 + 1
 
-        assertEq(refundable.betIds.length, 1);
-        assertEq(refundable.betIds[0], betId);
-        assertEq(refundable.amounts[0], 3 ether); // 2 + 1
-
-        // After refund, should be empty
+        // After refund, should be PENDING (no action available)
         vm.prank(alice);
         parimutuel.refund(betId, address(0));
 
-        refundable = parimutuel.getUserRefundable(alice);
-        assertEq(refundable.betIds.length, 0);
+        positions = parimutuel.getUserAllPositions(alice);
+        assertEq(positions.length, 1);
+        assertEq(uint256(positions[0].state), uint256(ParimutuelBetV0.PositionState.PENDING));
+        assertEq(positions[0].withdrawableAmount, 0);
     }
 
     function test_GetAwaitingResolutionIds() public {

@@ -70,7 +70,7 @@ $ cast --help
 
 
 ```sh
-forge create ./src/ParimutuelBetV0.sol:ParimutuelBetV0 --rpc-url $BASE_SEPOLIA_RPC_URL --account deployer
+forge create ./src/ParimutuelBetV0.sol:ParimutuelBetV0 --rpc-url $BASE_SEPOLIA_RPC_URL --account deployer --broadcast --verify
 
 
 # verify 
