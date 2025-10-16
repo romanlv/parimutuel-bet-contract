@@ -119,7 +119,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         vm.prank(creator);
         parimutuel.resolve(betId, true);
 
-        // Alice should get full pot since she's the only bettor
+        // Alice should get her bet back (no profit since no counter-bets)
         uint256 balanceBefore = alice.balance;
         vm.prank(alice);
         parimutuel.claim(betId, address(0));
@@ -141,12 +141,82 @@ contract ParimutuelBetV0AdditionalTest is Test {
         vm.prank(creator);
         parimutuel.resolve(betId, false);
 
-        // Alice should get full pot since she's the only bettor
+        // Alice should get her bet back (no profit since no counter-bets)
         uint256 balanceBefore = alice.balance;
         vm.prank(alice);
         parimutuel.claim(betId, address(0));
 
         assertEq(alice.balance, balanceBefore + 1 ether);
+    }
+
+    function test_OnlyYesBetsResolvesToNo() public {
+        vm.prank(creator);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
+
+        // Only YES bets
+        vm.prank(alice);
+        parimutuel.takePosition{value: 1 ether}(betId, true, "");
+
+        vm.prank(bob);
+        parimutuel.takePosition{value: 2 ether}(betId, true, "");
+
+        vm.warp(block.timestamp + 1 days + 1);
+
+        // Resolve to NO (against the only side that bet)
+        vm.prank(creator);
+        parimutuel.resolve(betId, false);
+
+        // Alice and Bob should still get their bets back (treated as push/refund)
+        uint256 aliceBalanceBefore = alice.balance;
+        uint256 bobBalanceBefore = bob.balance;
+
+        vm.prank(alice);
+        parimutuel.claim(betId, address(0));
+
+        vm.prank(bob);
+        parimutuel.claim(betId, address(0));
+
+        // Each gets their original bet back
+        assertEq(alice.balance, aliceBalanceBefore + 1 ether);
+        assertEq(bob.balance, bobBalanceBefore + 2 ether);
+
+        // Contract should be empty (no locked funds)
+        assertEq(address(parimutuel).balance, 0);
+    }
+
+    function test_OnlyNoBetsResolvesToYes() public {
+        vm.prank(creator);
+        uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
+
+        // Only NO bets
+        vm.prank(alice);
+        parimutuel.takePosition{value: 1.5 ether}(betId, false, "");
+
+        vm.prank(bob);
+        parimutuel.takePosition{value: 2.5 ether}(betId, false, "");
+
+        vm.warp(block.timestamp + 1 days + 1);
+
+        // Resolve to YES (against the only side that bet)
+        vm.prank(creator);
+        parimutuel.resolve(betId, true);
+
+        // Alice and Bob should still get their bets back (treated as push/refund)
+        uint256 aliceBalanceBefore = alice.balance;
+        uint256 bobBalanceBefore = bob.balance;
+
+        vm.prank(alice);
+        parimutuel.claim(betId, address(0));
+
+        vm.prank(bob);
+        parimutuel.claim(betId, address(0));
+
+        // Each gets their original bet back
+        assertEq(alice.balance, aliceBalanceBefore + 1.5 ether);
+        assertEq(bob.balance, bobBalanceBefore + 2.5 ether);
+
+        // Contract should be empty (no locked funds)
+        assertEq(address(parimutuel).balance, 0);
     }
 
     // Test market creation edge cases

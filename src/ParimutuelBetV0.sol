@@ -180,22 +180,31 @@ contract ParimutuelBetV0 is ReentrancyGuard {
             return 0;
         }
 
+        uint256 userYesPosition = yesPositions[betId][user];
+        uint256 userNoPosition = noPositions[betId][user];
+
+        // If one side has no bets (one-sided market), return user's position as refund
+        // This prevents funds from being locked when resolution goes against the only side
+        if (bet.yesTotal == 0) {
+            // Only NO bets exist - return user's NO position regardless of outcome
+            return userNoPosition;
+        }
+        if (bet.noTotal == 0) {
+            // Only YES bets exist - return user's YES position regardless of outcome
+            return userYesPosition;
+        }
+
+        // Normal two-sided market: calculate parimutuel payout based on outcome
         if (outcome) {
-            uint256 userYesPosition = yesPositions[betId][user];
+            // YES won
             if (userYesPosition == 0) {
                 return 0;
             }
-            if (bet.yesTotal == 0) {
-                return userYesPosition;
-            }
             return (userYesPosition * totalAmount) / bet.yesTotal;
         } else {
-            uint256 userNoPosition = noPositions[betId][user];
+            // NO won
             if (userNoPosition == 0) {
                 return 0;
-            }
-            if (bet.noTotal == 0) {
-                return userNoPosition;
             }
             return (userNoPosition * totalAmount) / bet.noTotal;
         }
