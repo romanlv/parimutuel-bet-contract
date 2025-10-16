@@ -4,25 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Foundry-based Solidity project implementing a parimutuel betting platform smart contract system. The project allows creation of binary outcome betting markets using any ERC20 token, with trustless parimutuel-style payouts where winners split the total pool proportionally.
+This is a Foundry-based Solidity project implementing a parimutuel betting platform smart contract system. The project allows creation of binary outcome betting markets using ETH, with trustless parimutuel-style payouts where winners split the total pool proportionally.
 
 ## Core Architecture
 
 ### Main Contracts
 
-- **`src/ParimutuelBet.sol`** - Main production contract implementing the full betting platform with ERC20 token support, creator fees, refund mechanisms, and comprehensive market management
-- **`src/ParimutuelBetV0.sol`** - Simple initial version using ETH only (for reference/testing)
+- **`src/ParimutuelBets.sol`** - Main betting platform contract implementing ETH-based parimutuel betting with display names, refund mechanisms, and comprehensive market management
 - **`src/Counter.sol`** - Standard Foundry template contract
 
 ### Key Features
 
-The main `ParimutuelBet` contract implements:
-- Token-agnostic betting (any ERC20 per market)
-- Creator-controlled market resolution with optional delays
-- Proportional winner payouts with configurable creator fees (0-10%)
-- 7-day refund mechanism if creators fail to resolve
-- Token whitelist support (optional)
+The main `ParimutuelBets` contract implements:
+- ETH-based betting with binary YES/NO outcomes
+- Separate resolver role (can be creator or another address)
+- Proportional winner payouts using parimutuel formula
+- 7-day refund mechanism if resolver fails to resolve
+- Display name support for bettors
+- One-sided market protection (prevents fund lockup)
 - Comprehensive view functions for market data and user positions
+- Pagination support for bet discovery
 
 ## Development Commands
 
@@ -60,49 +61,48 @@ cast balance <ADDRESS>                      # Check balance
 cast logs <EVENT_SIGNATURE>                 # Filter logs
 ```
 
-## Market Lifecycle
+## Bet Lifecycle
 
-1. **Creation**: `createMarket()` - Creator sets token, question, deadline, resolution delay, and fee
-2. **Betting**: `placeBet()` - Users bet YES/NO with specified ERC20 token until deadline
-3. **Resolution**: `resolve()` - Creator resolves to YES/NO after deadline (and optional delay)
-4. **Claiming**: `claim()` - Winners claim proportional share of total pool minus creator fee
-5. **Refunds**: `refund()` - Users can reclaim bets if creator fails to resolve within 7 days
+1. **Creation**: `createBet()` - Creator sets question, deadline, and resolver address
+2. **Betting**: `takePosition()` - Users bet YES/NO with ETH until deadline (optional display name)
+3. **Resolution**: `resolve()` - Resolver resolves to YES/NO after deadline
+4. **Claiming**: `claim()` - Winners claim proportional share of total pool
+5. **Refunds**: `refund()` - Users can reclaim bets if resolver fails to resolve within 7 days
 
 ## Data Structures
 
 ```solidity
-struct Market {
+struct Bet {
     address creator;
-    address token;              // ERC20 token for this market
+    address resolver;           // Address allowed to resolve (can be creator or another address)
     string question;
-    string description;
     uint256 deadline;
-    uint256 resolveAfter;       // Optional minimum resolution time
-    uint16 creatorFeePercentage; // 0-1000 (0-10%)
-    uint256 yesPool;
-    uint256 noPool;
-    uint256 resolvedAt;
+    uint256 createdAt;
+    uint256 yesTotal;
+    uint256 noTotal;
     bool resolved;
     bool outcome;
-    bool cancelled;
-    bool creatorFeeClaimed;
 }
 ```
 
 ## Key Mappings
 
-- `markets[marketId]` - Market details
-- `yesBets[marketId][user]` - User's YES bet amounts
-- `noBets[marketId][user]` - User's NO bet amounts
-- `hasClaimed[marketId][user]` - Claim status tracking
+- `bets[betId]` - Bet details
+- `yesPositions[betId][user]` - User's YES bet amounts
+- `noPositions[betId][user]` - User's NO bet amounts
+- `hasClaimed[betId][user]` - Claim status tracking
+- `hasRefunded[betId][user]` - Refund status tracking
+- `displayNames[betId][user]` - Optional display names
 
 ## Security Features
 
-- ReentrancyGuard on betting and claiming functions
-- Creator fee capped at 10% (MAX_CREATOR_FEE = 1000 basis points)
-- Safe ERC20 transfer checks with fallback token metadata handling
-- Proper access controls (only creator can resolve their markets)
-- Time-based validation (deadline enforcement, resolution delays)
+- ReentrancyGuard on claim and refund functions
+- One-sided market protection (prevents fund lockup if only one side has bets)
+- Safe ETH transfers using call() instead of transfer() for smart contract wallet compatibility
+- Proper access controls (only designated resolver can resolve bets)
+- Time-based validation (deadline enforcement, max 365 days, refund period)
+- Prevention of resolution after refunds have started
+- Claim-for/refund-for functionality allowing anyone to trigger on behalf of users
 
 ## Project Documentation
 
@@ -110,5 +110,16 @@ The `docs/bet-contract-prd.md` file contains the complete product requirements d
 
 ## Dependencies
 
-- OpenZeppelin contracts for ERC20 interface and ReentrancyGuard
+- OpenZeppelin contracts for ReentrancyGuard
 - Foundry's forge-std for testing utilities
+
+## Query Functions
+
+The contract provides comprehensive query functions for frontend integration:
+- `getOpenBetIds()` - Paginated list of active bets
+- `getAwaitingResolutionIds()` - Bets past deadline awaiting resolution
+- `getResolvedBetIds()` - Paginated list of resolved bets
+- `getUserAllPositions()` - All positions for a user with state info
+- `getCreatorBets()` - All bets created by an address
+- `getBetWithUserData()` - Complete bet info with user-specific data
+- `getBetStats()` - Comprehensive statistics for a bet

@@ -66,20 +66,26 @@ $ cast --help
 ```
 
 
-# deploy 
+# Deploy ParimutuelBets
 
+## Deployment
 
 ```sh
-forge create ./src/ParimutuelBetV0.sol:ParimutuelBetV0 --rpc-url $BASE_SEPOLIA_RPC_URL --account deployer --broadcast --verify
+forge create ./src/ParimutuelBets.sol:ParimutuelBets --rpc-url $BASE_SEPOLIA_RPC_URL --account deployer --broadcast --verify
+```
 
+## Verification
 
-# verify 
+```sh
+forge verify-contract --etherscan-api-key $ETHERSCAN_API_KEY --rpc-url $BASE_SEPOLIA_RPC_URL $BET_CONTRACT ./src/ParimutuelBets.sol:ParimutuelBets
+```
 
-forge verify-contract $BET_CONTRACT_V0s
+## Interact with Contract
 
-cast call $BET_CONTRACT_V0 "getMarket(uint256)" --rpc-url $BASE_SEPOLIA_RPC_URL
+```sh
+# Get total bets count
+cast call $BET_CONTRACT "getTotalBetsCount()" --rpc-url $BASE_SEPOLIA_RPC_URL
 
-
-forge verify-contract --etherscan-api-key $ETHERSCAN_API_KEY  --rpc-url $BASE_SEPOLIA_RPC_URL  $BET_CONTRACT_V0 ./src/ParimutuelBetV0.sol:ParimutuelBetV0
-
+# Get bet details
+cast call $BET_CONTRACT "bets(uint256)" <BET_ID> --rpc-url $BASE_SEPOLIA_RPC_URL
 ```

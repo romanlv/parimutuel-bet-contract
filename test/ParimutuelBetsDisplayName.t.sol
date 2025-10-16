@@ -2,10 +2,10 @@
 pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
-import {ParimutuelBetV0} from "../src/ParimutuelBetV0.sol";
+import {ParimutuelBets} from "../src/ParimutuelBets.sol";
 
-contract ParimutuelBetV0DisplayNameTest is Test {
-    ParimutuelBetV0 public parimutuel;
+contract ParimutuelBetsDisplayNameTest is Test {
+    ParimutuelBets public parimutuel;
 
     address public alice = makeAddr("alice");
     address public bob = makeAddr("bob");
@@ -25,7 +25,7 @@ contract ParimutuelBetV0DisplayNameTest is Test {
     );
 
     function setUp() public {
-        parimutuel = new ParimutuelBetV0();
+        parimutuel = new ParimutuelBets();
 
         // Fund all participants
         vm.deal(alice, INITIAL_BALANCE);
@@ -217,8 +217,8 @@ contract ParimutuelBetV0DisplayNameTest is Test {
         parimutuel.takePosition{value: 3 ether}(betId, false, "Bob");
 
         // Verify positions are correct regardless of display names
-        ParimutuelBetV0.BetWithUserData memory aliceData = parimutuel.getBetWithUserData(betId, alice);
-        ParimutuelBetV0.BetWithUserData memory bobData = parimutuel.getBetWithUserData(betId, bob);
+        ParimutuelBets.BetWithUserData memory aliceData = parimutuel.getBetWithUserData(betId, alice);
+        ParimutuelBets.BetWithUserData memory bobData = parimutuel.getBetWithUserData(betId, bob);
 
         assertEq(aliceData.userYesPosition, 2 ether);
         assertEq(bobData.userNoPosition, 3 ether);

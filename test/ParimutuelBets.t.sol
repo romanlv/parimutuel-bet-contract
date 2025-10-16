@@ -2,10 +2,10 @@
 pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
-import {ParimutuelBetV0} from "../src/ParimutuelBetV0.sol";
+import {ParimutuelBets} from "../src/ParimutuelBets.sol";
 
-contract ParimutuelBetV0Test is Test {
-    ParimutuelBetV0 public parimutuel;
+contract ParimutuelBetsTest is Test {
+    ParimutuelBets public parimutuel;
 
     address public alice = makeAddr("alice");
     address public bob = makeAddr("bob");
@@ -15,7 +15,7 @@ contract ParimutuelBetV0Test is Test {
     uint256 constant INITIAL_BALANCE = 10 ether;
 
     function setUp() public {
-        parimutuel = new ParimutuelBetV0();
+        parimutuel = new ParimutuelBets();
 
         // Fund all participants
         vm.deal(alice, INITIAL_BALANCE);
@@ -42,18 +42,18 @@ contract ParimutuelBetV0Test is Test {
         parimutuel.takePosition{value: 1 ether}(betId, true, "");
 
         // Verify total states and user positions using new struct interface
-        ParimutuelBetV0.BetWithUserData memory aliceData = parimutuel.getBetWithUserData(betId, alice);
+        ParimutuelBets.BetWithUserData memory aliceData = parimutuel.getBetWithUserData(betId, alice);
 
         assertEq(aliceData.bet.yesTotal, 3 ether); // Alice (2) + Charlie (1)
         assertEq(aliceData.bet.noTotal, 3 ether); // Bob (3)
         assertEq(aliceData.userYesPosition, 2 ether);
         assertEq(aliceData.userNoPosition, 0);
 
-        ParimutuelBetV0.BetWithUserData memory bobData = parimutuel.getBetWithUserData(betId, bob);
+        ParimutuelBets.BetWithUserData memory bobData = parimutuel.getBetWithUserData(betId, bob);
         assertEq(bobData.userYesPosition, 0);
         assertEq(bobData.userNoPosition, 3 ether);
 
-        ParimutuelBetV0.BetWithUserData memory charlieData = parimutuel.getBetWithUserData(betId, charlie);
+        ParimutuelBets.BetWithUserData memory charlieData = parimutuel.getBetWithUserData(betId, charlie);
         assertEq(charlieData.userYesPosition, 1 ether);
         assertEq(charlieData.userNoPosition, 0);
 

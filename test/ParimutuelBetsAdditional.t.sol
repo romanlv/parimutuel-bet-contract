@@ -2,10 +2,10 @@
 pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
-import {ParimutuelBetV0} from "../src/ParimutuelBetV0.sol";
+import {ParimutuelBets} from "../src/ParimutuelBets.sol";
 
-contract ParimutuelBetV0AdditionalTest is Test {
-    ParimutuelBetV0 public parimutuel;
+contract ParimutuelBetsAdditionalTest is Test {
+    ParimutuelBets public parimutuel;
 
     address public alice = makeAddr("alice");
     address public bob = makeAddr("bob");
@@ -15,7 +15,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
     uint256 constant INITIAL_BALANCE = 10 ether;
 
     function setUp() public {
-        parimutuel = new ParimutuelBetV0();
+        parimutuel = new ParimutuelBets();
         vm.deal(alice, INITIAL_BALANCE);
         vm.deal(bob, INITIAL_BALANCE);
         vm.deal(charlie, INITIAL_BALANCE);
@@ -283,7 +283,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         parimutuel.takePosition{value: 0.5 ether}(betId, false, "");
 
         // Verify accumulated bets
-        ParimutuelBetV0.BetWithUserData memory aliceData = parimutuel.getBetWithUserData(betId, alice);
+        ParimutuelBets.BetWithUserData memory aliceData = parimutuel.getBetWithUserData(betId, alice);
         assertEq(aliceData.userYesPosition, 3 ether);
         assertEq(aliceData.userNoPosition, 0.5 ether);
     }
@@ -381,7 +381,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         parimutuel.takePosition{value: 3 ether}(betId, false, "");
 
         // Check pools before refund
-        ParimutuelBetV0.BetWithUserData memory dataBefore = parimutuel.getBetWithUserData(betId, address(0));
+        ParimutuelBets.BetWithUserData memory dataBefore = parimutuel.getBetWithUserData(betId, address(0));
         uint256 yesTotalBefore = dataBefore.bet.yesTotal;
         uint256 noTotalBefore = dataBefore.bet.noTotal;
         assertEq(yesTotalBefore, 2 ether);
@@ -393,7 +393,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         parimutuel.refund(betId, address(0));
 
         // Pool accounting after refund - pools are not updated
-        ParimutuelBetV0.BetWithUserData memory dataAfter = parimutuel.getBetWithUserData(betId, address(0));
+        ParimutuelBets.BetWithUserData memory dataAfter = parimutuel.getBetWithUserData(betId, address(0));
         uint256 yesTotalAfter = dataAfter.bet.yesTotal;
         uint256 totalAfter = dataAfter.bet.yesTotal + dataAfter.bet.noTotal;
 
@@ -417,12 +417,12 @@ contract ParimutuelBetV0AdditionalTest is Test {
         parimutuel.takePosition{value: 1 ether}(betId, false, "");
 
         // Check positions are ACTIVE before deadline
-        ParimutuelBetV0.UserPositionDetail[] memory positions = parimutuel.getUserAllPositions(alice);
+        ParimutuelBets.UserPositionDetail[] memory positions = parimutuel.getUserAllPositions(alice);
         assertEq(positions.length, 1);
         assertEq(positions[0].betId, betId);
         assertEq(positions[0].yesAmount, 2 ether);
         assertEq(positions[0].noAmount, 1 ether);
-        assertEq(uint256(positions[0].state), uint256(ParimutuelBetV0.PositionState.ACTIVE));
+        assertEq(uint256(positions[0].state), uint256(ParimutuelBets.PositionState.ACTIVE));
         assertEq(positions[0].withdrawableAmount, 0);
 
         // Move past deadline + refund period
@@ -431,7 +431,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         // Check positions are REFUNDABLE
         positions = parimutuel.getUserAllPositions(alice);
         assertEq(positions.length, 1);
-        assertEq(uint256(positions[0].state), uint256(ParimutuelBetV0.PositionState.REFUNDABLE));
+        assertEq(uint256(positions[0].state), uint256(ParimutuelBets.PositionState.REFUNDABLE));
         assertEq(positions[0].withdrawableAmount, 3 ether); // 2 + 1
 
         // After refund, should be PENDING (no action available)
@@ -440,7 +440,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
 
         positions = parimutuel.getUserAllPositions(alice);
         assertEq(positions.length, 1);
-        assertEq(uint256(positions[0].state), uint256(ParimutuelBetV0.PositionState.PENDING));
+        assertEq(uint256(positions[0].state), uint256(ParimutuelBets.PositionState.PENDING));
         assertEq(positions[0].withdrawableAmount, 0);
     }
 
@@ -458,7 +458,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         // Move past first deadline
         vm.warp(block.timestamp + 1 days + 1);
 
-        ParimutuelBetV0.PaginatedBetIds memory result = parimutuel.getAwaitingResolutionIds(0, 10);
+        ParimutuelBets.PaginatedBetIds memory result = parimutuel.getAwaitingResolutionIds(0, 10);
         assertEq(result.ids.length, 1);
         assertEq(result.ids[0], market1);
         assertFalse(result.hasMore);
@@ -487,7 +487,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         vm.prank(creator);
         uint256 betId = parimutuel.createBet("Test", block.timestamp + 1 days, creator);
 
-        ParimutuelBetV0.BetWithUserData memory data = parimutuel.getBetWithUserData(betId, address(0));
+        ParimutuelBets.BetWithUserData memory data = parimutuel.getBetWithUserData(betId, address(0));
         assertEq(data.bet.createdAt, creationTime);
     }
 
@@ -502,7 +502,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         vm.warp(block.timestamp + 1 days + 1);
 
         // Test pagination with limit 2
-        ParimutuelBetV0.PaginatedBetIds memory result = parimutuel.getAwaitingResolutionIds(0, 2);
+        ParimutuelBets.PaginatedBetIds memory result = parimutuel.getAwaitingResolutionIds(0, 2);
         assertEq(result.ids.length, 2);
         assertTrue(result.hasMore);
 
@@ -869,7 +869,7 @@ contract ParimutuelBetV0AdditionalTest is Test {
         parimutuel.resolve(betId, true);
 
         // Verify resolution
-        ParimutuelBetV0.BetWithUserData memory data = parimutuel.getBetWithUserData(betId, address(0));
+        ParimutuelBets.BetWithUserData memory data = parimutuel.getBetWithUserData(betId, address(0));
         assertTrue(data.bet.resolved);
         assertTrue(data.bet.outcome);
     }

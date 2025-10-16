@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract ParimutuelBetV0 is ReentrancyGuard {
+contract ParimutuelBets is ReentrancyGuard {
     string public constant VERSION = "0.8.0";
 
     struct Bet {
